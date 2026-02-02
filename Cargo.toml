@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 rustc-hash = "2.0"
 rand = "0.8"
+pest = "2.7"
+pest_derive = "2.7"
+lazy_static = "1.5"

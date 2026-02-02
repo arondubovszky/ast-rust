@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeMap,
-    ops::{Add, Div, Mul, Sub},
+    ops::{Add, AddAssign, Div, Mul, Sub},
 };
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -245,6 +245,47 @@ impl Div for Type {
     }
 }
 
+impl AddAssign for Type {
+    fn add_assign(&mut self, rhs: Self) {
+        match self {
+            Type::Int32(a) => match rhs {
+                Type::Int32(b) => *a += b,
+                Type::Int64(b) => *self = Type::Int64(*a as i64 + b),
+                Type::Float64(b) => *self = Type::Float64(*a as f64 + b),
+                _ => panic!("Cannot += {:?} to Int32", rhs),
+            },
+            Type::Int64(a) => match rhs {
+                Type::Int32(b) => *a += b as i64,
+                Type::Int64(b) => *a += b,
+                Type::Float64(b) => *self = Type::Float64(*a as f64 + b),
+                _ => panic!("Cannot += {:?} to Int64", rhs),
+            },
+            Type::Float32(a) => match rhs {
+                Type::Float32(b) => *a += b,
+                Type::Float64(b) => *self = Type::Float64(*a as f64 + b),
+                Type::Int32(b) => *self = Type::Float64(*a as f64 + b as f64),
+                _ => panic!("Cannot += {:?} to Float32", rhs),
+            },
+            Type::Float64(a) => match rhs {
+                Type::Float32(b) => *a += b as f64,
+                Type::Float64(b) => *a += b,
+                Type::Int32(b) => *a += b as f64,
+                Type::Int64(b) => *a += b as f64,
+                _ => panic!("Cannot += {:?} to Float64", rhs),
+            },
+            Type::Str(s) => match rhs {
+                Type::Str(b) => s.push_str(&b),
+                Type::Int32(b) => s.push_str(&b.to_string()),
+                Type::Int64(b) => s.push_str(&b.to_string()),
+                Type::Float32(b) => s.push_str(&b.to_string()),
+                Type::Float64(b) => s.push_str(&b.to_string()),
+                _ => panic!("Cannot += {:?} to Str", rhs),
+            },
+            _ => panic!("Cannot += on {:?}", self),
+        }
+    }
+}
+
 impl Type {
     pub fn get_kind(&self) -> TypeKind {
         match self {
@@ -263,6 +304,50 @@ impl Type {
             Type::Break => TypeKind::Break,
             Type::Continue => TypeKind::Continue,
             Type::Optional(_) => TypeKind::Optional,
+        }
+    }
+
+    pub fn increment(&mut self) -> Result<(), String> {
+        match self {
+            Type::Int32(a) => {
+                *a += 1;
+                Ok(())
+            }
+            Type::Int64(a) => {
+                *a += 1;
+                Ok(())
+            }
+            Type::Float32(a) => {
+                *a += 1.0;
+                Ok(())
+            }
+            Type::Float64(a) => {
+                *a += 1.0;
+                Ok(())
+            }
+            _ => Err(format!("Cannot increment {:?}", self._display())),
+        }
+    }
+
+    pub fn decrement(&mut self) -> Result<(), String> {
+        match self {
+            Type::Int32(a) => {
+                *a -= 1;
+                Ok(())
+            }
+            Type::Int64(a) => {
+                *a -= 1;
+                Ok(())
+            }
+            Type::Float32(a) => {
+                *a -= 1.0;
+                Ok(())
+            }
+            Type::Float64(a) => {
+                *a -= 1.0;
+                Ok(())
+            }
+            _ => Err(format!("Cannot decrement {:?}", self._display())),
         }
     }
 

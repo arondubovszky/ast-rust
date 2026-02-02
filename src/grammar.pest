@@ -1,0 +1,227 @@
+// ============================================================================
+// Whitespace & Comments
+// ============================================================================
+
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT    = _{ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
+
+// ============================================================================
+// Program
+// ============================================================================
+
+program = { SOI ~ top_level_item* ~ EOI }
+
+top_level_item = { note_def | fn_def | struct_def }
+
+// ============================================================================
+// Literals
+// ============================================================================
+
+float       = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
+integer     = @{ "-"? ~ ASCII_DIGIT+ }
+string      = @{ "\"" ~ (escape_char | (!("\"" | "\\") ~ ANY))* ~ "\"" }
+escape_char = _{ "\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | "\\0" }
+boolean     =  { "true" | "false" }
+null_lit    =  { "null" }
+
+identifier = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+
+keyword = {
+    ("fn" | "let" | "struct" | "if" | "else" | "while" | "for" | "return" | "break" | "continue" | "true" | "false" | "null" | "print" | "println" | "note" | "i32" | "i64" | "f32" | "f64" | "bool" | "str" | "void") ~ !(ASCII_ALPHANUMERIC | "_")
+}
+
+// ============================================================================
+// Types
+// ============================================================================
+
+type_expr = { (array_type | primitive_type | type_identifier) ~ optional_marker? }
+
+primitive_type  =  { "i32" | "i64" | "f32" | "f64" | "bool" | "str" | "void" }
+array_type      =  { "[" ~ type_expr ~ "]" }
+type_identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+optional_marker =  { "!" }
+
+// ============================================================================
+// Expressions (precedence climbing)
+// ============================================================================
+
+expr = { prefix_op* ~ primary ~ postfix* ~ (bin_op ~ prefix_op* ~ primary ~ postfix*)* }
+
+primary = {
+    "(" ~ expr ~ ")"
+  | float
+  | integer
+  | string
+  | boolean
+  | null_lit
+  | array_literal
+  | struct_literal
+  | identifier ~ call_args?
+}
+
+// ============================================================================
+// Postfix operations (field access, indexing)
+// ============================================================================
+
+postfix = { dot_access | index_access }
+
+dot_access   = { "." ~ identifier }
+index_access = { "[" ~ expr ~ "]" }
+
+// ============================================================================
+// Function call arguments
+// ============================================================================
+
+call_args = { "(" ~ (expr ~ ("," ~ expr)*)? ~ ")" }
+
+// ============================================================================
+// Array literal  [1, 2, 3]
+// ============================================================================
+
+array_literal = { "[" ~ (expr ~ ("," ~ expr)*)? ~ "]" }
+
+// ============================================================================
+// Struct literal  User { id: 1, name: "Alice" }
+// ============================================================================
+
+struct_literal    = { identifier ~ "{" ~ (struct_field_init ~ ("," ~ struct_field_init)*)? ~ ","? ~ "}" }
+struct_field_init = { identifier ~ ":" ~ expr }
+
+// ============================================================================
+// If expression
+// ============================================================================
+
+// if_condition is like expr but cannot contain bare blocks, so the parser
+// stops before `{`. We achieve this by inlining the expr rule without if_expr
+// in primary (which would cause recursion issues anyway).
+if_expr      = { "if" ~ if_condition ~ block ~ ("else" ~ (if_expr | block))? }
+if_condition = { prefix_op* ~ cond_primary ~ postfix* ~ (bin_op ~ prefix_op* ~ cond_primary ~ postfix*)* }
+
+cond_primary = {
+    "(" ~ expr ~ ")"
+  | float
+  | integer
+  | string
+  | boolean
+  | null_lit
+  | array_literal
+  | identifier ~ call_args?
+}
+
+// ============================================================================
+// Operators
+// ============================================================================
+
+bin_op = _{
+    power
+  | and_op
+  | or_op
+  | eq_op
+  | neq_op
+  | lte_op
+  | gte_op
+  | lt_op
+  | gt_op
+  | add_op
+  | sub_op
+  | mul_op
+  | div_op
+  | modulo_op
+  | bit_and_op
+  | bit_or_op
+  | bit_xor_op
+}
+
+power      = { "**" }
+add_op     = { "+" }
+sub_op     = { "-" }
+mul_op     = { "*" }
+div_op     = { "/" }
+modulo_op  = { "%" }
+and_op     = { "&&" }
+or_op      = { "||" }
+eq_op      = { "==" }
+neq_op     = { "!=" }
+lt_op      = { "<" }
+gt_op      = { ">" }
+lte_op     = { "<=" }
+gte_op     = { ">=" }
+bit_and_op = { "&" }
+bit_or_op  = { "|" }
+bit_xor_op = { "^" }
+
+prefix_op  = { not_op | neg_op | bit_not_op }
+not_op     = { "!" }
+neg_op     = { "-" }
+bit_not_op = { "~" }
+
+// ============================================================================
+// Statements
+// ============================================================================
+
+statement = {
+    let_stmt
+  | assign_field_stmt
+  | assign_stmt
+  | return_stmt
+  | if_stmt
+  | while_stmt
+  | for_stmt
+  | break_stmt
+  | continue_stmt
+  | print_stmt
+  | println_stmt
+  | expr_stmt
+}
+
+if_stmt = { if_expr }
+
+let_stmt            = { "let" ~ identifier ~ ":" ~ type_expr ~ "=" ~ expr ~ ";" }
+assign_stmt         = { identifier ~ "=" ~ expr ~ ";" }
+assign_field_stmt   = { identifier ~ "." ~ identifier ~ "=" ~ expr ~ ";" }
+return_stmt         = { "return" ~ expr? ~ ";" }
+while_stmt          = { "while" ~ expr ~ block }
+for_stmt            = { "for" ~ "(" ~ for_init ~ ";" ~ expr ~ ";" ~ for_update ~ ")" ~ block }
+for_init            = { let_stmt_no_semi | assign_stmt_no_semi }
+for_update          = { assign_stmt_no_semi }
+let_stmt_no_semi    = { "let" ~ identifier ~ ":" ~ type_expr ~ "=" ~ expr }
+assign_stmt_no_semi = { identifier ~ "=" ~ expr }
+break_stmt          = { "break" ~ ";" }
+continue_stmt       = { "continue" ~ ";" }
+print_stmt          = { "print" ~ "(" ~ expr ~ ")" ~ ";" }
+println_stmt        = { "println" ~ "(" ~ expr ~ ")" ~ ";" }
+expr_stmt           = { expr ~ ";" }
+
+// ============================================================================
+// Block
+// ============================================================================
+
+block = { "{" ~ statement* ~ "}" }
+
+// ============================================================================
+// Top-level: Function definition
+// ============================================================================
+
+fn_def = {
+    "fn" ~ identifier ~ "(" ~ (param ~ ("," ~ param)*)? ~ ")" ~ "->" ~ type_expr ~ block
+}
+
+param = { identifier ~ ":" ~ type_expr }
+
+// ============================================================================
+// Top-level: Struct definition
+// ============================================================================
+
+struct_def = {
+    "struct" ~ identifier ~ "{" ~ (field_def ~ ("," ~ field_def)*)? ~ ","? ~ "}"
+}
+
+field_def = { identifier ~ ":" ~ type_expr }
+
+// ============================================================================
+// Top-level: Note (feature annotation wrapping another item)
+// ============================================================================
+
+note_def = {
+    "#[" ~ "note" ~ "(" ~ string ~ ")" ~ "]" ~ top_level_item
+}

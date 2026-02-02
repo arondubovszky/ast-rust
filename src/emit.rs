@@ -101,6 +101,8 @@ impl Emit for Symbol {
             Symbol::Dot => ".".to_string(),
             Symbol::Arrow => "->".to_string(),
             Symbol::Comma => ",".to_string(),
+            Symbol::Increment => "++".to_string(),
+            Symbol::Decrement => "--".to_string(),
             Symbol::Index => "index".to_string(),
             Symbol::Call => "call".to_string(),
         }

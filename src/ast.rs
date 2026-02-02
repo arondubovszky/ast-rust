@@ -244,6 +244,9 @@ pub enum Symbol {
     Modulo,   // %
     Power,    // **
 
+    Increment, // ++
+    Decrement, // --
+
     // Bitwise
     BitAnd, // &
     BitOr,  // |
@@ -417,6 +420,16 @@ impl ExprNode {
                     },
                     Symbol::Multiply => l * r.unwrap(),
                     Symbol::Divide => l / r.unwrap(),
+                    Symbol::Increment => {
+                        let mut val = l;
+                        val.increment()?;
+                        Ok(val)
+                    }
+                    Symbol::Decrement => {
+                        let mut val = l;
+                        val.decrement()?;
+                        Ok(val)
+                    }
                     Symbol::Eq => match (l, r.unwrap()) {
                         (Type::Int32(a), Type::Int32(b)) => Ok(Type::Bool(a == b)),
                         (Type::Int64(a), Type::Int64(b)) => Ok(Type::Bool(a == b)),
