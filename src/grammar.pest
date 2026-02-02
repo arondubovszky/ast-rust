@@ -63,8 +63,10 @@ primary = {
 // Postfix operations (field access, indexing)
 // ============================================================================
 
-postfix = { dot_access | index_access }
+postfix = { increment_op | decrement_op | dot_access | index_access }
 
+increment_op = { "++" }
+decrement_op = { "--" }
 dot_access   = { "." ~ identifier }
 index_access = { "[" ~ expr ~ "]" }
 
@@ -150,10 +152,10 @@ bit_and_op = { "&" }
 bit_or_op  = { "|" }
 bit_xor_op = { "^" }
 
-prefix_op  = { not_op | neg_op | bit_not_op }
-not_op     = { "!" }
-neg_op     = { "-" }
-bit_not_op = { "~" }
+prefix_op  = _{ not_op | neg_op | bit_not_op }
+not_op     =  { "!" }
+neg_op     =  { "-" }
+bit_not_op =  { "~" }
 
 // ============================================================================
 // Statements
@@ -183,7 +185,7 @@ return_stmt         = { "return" ~ expr? ~ ";" }
 while_stmt          = { "while" ~ expr ~ block }
 for_stmt            = { "for" ~ "(" ~ for_init ~ ";" ~ expr ~ ";" ~ for_update ~ ")" ~ block }
 for_init            = { let_stmt_no_semi | assign_stmt_no_semi }
-for_update          = { assign_stmt_no_semi }
+for_update          = { assign_stmt_no_semi | expr }
 let_stmt_no_semi    = { "let" ~ identifier ~ ":" ~ type_expr ~ "=" ~ expr }
 assign_stmt_no_semi = { identifier ~ "=" ~ expr }
 break_stmt          = { "break" ~ ";" }

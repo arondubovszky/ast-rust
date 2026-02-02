@@ -37,10 +37,6 @@ lazy_static! {
     };
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
 /// Parsed output: top-level items split into functions, structs, and loose statements.
 pub struct ParsedProgram {
     pub functions: Vec<Function>,
@@ -90,10 +86,6 @@ pub fn parse(input: &str) -> Result<ParsedProgram, String> {
 
     Ok(ParsedProgram { functions, structs })
 }
-
-// ---------------------------------------------------------------------------
-// Top-level parsers
-// ---------------------------------------------------------------------------
 
 fn parse_fn_def(pair: Pair<Rule>) -> Function {
     let mut inner = pair.into_inner();
@@ -152,10 +144,6 @@ fn parse_struct_def(pair: Pair<Rule>) -> StructDef {
     def
 }
 
-// ---------------------------------------------------------------------------
-// Type parsing
-// ---------------------------------------------------------------------------
-
 fn parse_type_kind(pair: Pair<Rule>) -> TypeKind {
     // type_expr = { (array_type | primitive_type | type_identifier) ~ optional_marker? }
     let mut kind = TypeKind::Void;
@@ -211,10 +199,6 @@ fn type_kind_to_default_type(kind: TypeKind) -> Type {
         _ => Type::Void,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Block / Statement parsing
-// ---------------------------------------------------------------------------
 
 fn parse_block(pair: Pair<Rule>) -> Vec<ASTNode> {
     let mut stmts = Vec::new();
@@ -332,17 +316,17 @@ fn parse_for_stmt(pair: Pair<Rule>) -> ASTNode {
     let update = parse_for_update(update_pair);
     let mut body = parse_block(block_pair);
 
-    // Append the update statement to the end of the loop body
+    // append the update statement to the end of the loop body
     body.push(update);
 
-    // Wrap as: init; while (cond) { body; update; }
-    // We use an IfElseNode(true) to hold both statements in sequence.
+    // wrap as: init; while (cond) { body; update; }
+    // we use an IfElseNode(true) to hold both statements in sequence.
     let loop_node = ASTNode::Expr(ExprNode::LoopNode {
         statement: Rc::new(condition),
         body: Rc::new(body),
     });
 
-    // Return as if(true) { init; while(...) { ... } } — a sequencing hack
+    // return as if(true) { init; while(...) { ... } } — a sequencing hack
     ASTNode::Expr(ExprNode::IfElseNode {
         statement: Rc::new(ExprNode::Literal(Type::Bool(true))),
         then_branch: Rc::new(vec![init, loop_node]),
@@ -375,16 +359,18 @@ fn parse_for_init(pair: Pair<Rule>) -> ASTNode {
 }
 
 fn parse_for_update(pair: Pair<Rule>) -> ASTNode {
-    let inner = pair.into_inner().next().unwrap(); // assign_stmt_no_semi
-    let mut parts = inner.into_inner();
-    let name = parts.next().unwrap().as_str().to_string();
-    let value_expr = parse_expr(parts.next().unwrap());
-    ASTNode::SetVar(SetVariable::new(Type::Void, &name, Rc::new(value_expr)))
+    let inner = pair.into_inner().next().unwrap();
+    match inner.as_rule() {
+        Rule::assign_stmt_no_semi => {
+            let mut parts = inner.into_inner();
+            let name = parts.next().unwrap().as_str().to_string();
+            let value_expr = parse_expr(parts.next().unwrap());
+            ASTNode::SetVar(SetVariable::new(Type::Void, &name, Rc::new(value_expr)))
+        }
+        Rule::expr => ASTNode::Expr(parse_expr(inner)),
+        _ => panic!("unexpected for_update rule: {:?}", inner.as_rule()),
+    }
 }
-
-// ---------------------------------------------------------------------------
-// Expression parsing (Pratt / precedence climbing)
-// ---------------------------------------------------------------------------
 
 fn parse_expr(pair: Pair<Rule>) -> ExprNode {
     let pairs = pair.into_inner();
@@ -452,6 +438,16 @@ fn parse_expr_pratt(pairs: Pairs<Rule>) -> ExprNode {
                             index: Rc::new(index_expr),
                         }
                     }
+                    Rule::increment_op => ExprNode::BinaryOp {
+                        op: Symbol::Increment,
+                        left: Rc::new(lhs),
+                        right: None,
+                    },
+                    Rule::decrement_op => ExprNode::BinaryOp {
+                        op: Symbol::Decrement,
+                        left: Rc::new(lhs),
+                        right: None,
+                    },
                     _ => unreachable!(),
                 }
             }
@@ -563,10 +559,6 @@ fn parse_struct_literal(pair: Pair<Rule>) -> ExprNode {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 fn parse_string_literal(pair: Pair<Rule>) -> String {
     let raw = pair.as_str();
     // Strip surrounding quotes
@@ -581,10 +573,6 @@ fn parse_string_literal(pair: Pair<Rule>) -> String {
         .replace("\\0", "\0")
         .replace("\x00", "\\") // restore real backslash
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -737,7 +725,7 @@ mod tests {
         let input = r#"
             fn main() -> void {
                 let i: i32 = 0;
-                for (i = 0; i < 5; i = i + 1) {
+                for (i = 0; i < 5; i++) {
                     println(i);
                 }
             }

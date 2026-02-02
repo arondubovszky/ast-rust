@@ -299,7 +299,7 @@ impl Executable for ASTNode {
                             Type::Float64(f) => print!("{}", f),
                             Type::Int32(i) => print!("{}", i),
                             Type::Int64(i) => print!("{}", i),
-                            Type::Str(s) => print!("{:?}", s),
+                            Type::Str(s) => print!("{}", s),
                             _ => print!("{:?}", x),
                         }
                         return Ok(x);
@@ -318,7 +318,7 @@ impl Executable for ASTNode {
                             Type::Float64(f) => println!("{}", f),
                             Type::Int32(i) => println!("{}", i),
                             Type::Int64(i) => println!("{}", i),
-                            Type::Str(s) => println!("{:?}", s),
+                            Type::Str(s) => println!("{}", s),
                             _ => print!("{:?}", x),
                         }
                         return Ok(x);
@@ -406,6 +406,29 @@ impl ExprNode {
                 }
             }
             ExprNode::BinaryOp { op, left, right } => {
+                // Increment/Decrement need to mutate the variable in-place
+                if matches!(op, Symbol::Increment | Symbol::Decrement) {
+                    if let ExprNode::Literal(Type::VarRef(name)) = left.as_ref() {
+                        let mut val = ctx.get_variable_reference(name);
+                        match op {
+                            Symbol::Increment => val.increment()?,
+                            Symbol::Decrement => val.decrement()?,
+                            _ => unreachable!(),
+                        }
+                        let result = val.clone();
+                        ctx.set_variable(name, val)?;
+                        return Ok(result);
+                    } else {
+                        let mut val = left.execute_core(ctx)?;
+                        match op {
+                            Symbol::Increment => val.increment()?,
+                            Symbol::Decrement => val.decrement()?,
+                            _ => unreachable!(),
+                        }
+                        return Ok(val);
+                    }
+                }
+
                 let l = left.execute_core(ctx)?;
                 let r = right
                     .as_ref()
@@ -420,16 +443,7 @@ impl ExprNode {
                     },
                     Symbol::Multiply => l * r.unwrap(),
                     Symbol::Divide => l / r.unwrap(),
-                    Symbol::Increment => {
-                        let mut val = l;
-                        val.increment()?;
-                        Ok(val)
-                    }
-                    Symbol::Decrement => {
-                        let mut val = l;
-                        val.decrement()?;
-                        Ok(val)
-                    }
+                    Symbol::Increment | Symbol::Decrement => unreachable!(),
                     Symbol::Eq => match (l, r.unwrap()) {
                         (Type::Int32(a), Type::Int32(b)) => Ok(Type::Bool(a == b)),
                         (Type::Int64(a), Type::Int64(b)) => Ok(Type::Bool(a == b)),

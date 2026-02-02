@@ -1,7 +1,15 @@
 [package]
-name = "ast1"
+name = "pavo"
 version = "0.1.0"
 edition = "2024"
+
+[[bin]]
+name = "pavo"
+path = "src/main.rs"
+
+[lib]
+name = "pavo"
+path = "src/lib.rs"
 
 [dependencies]
 rustc-hash = "2.0"
