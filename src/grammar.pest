@@ -163,6 +163,8 @@ bit_not_op =  { "~" }
 
 statement = {
     let_stmt
+  | init_stmt
+  | assign_index_stmt
   | assign_field_stmt
   | assign_stmt
   | return_stmt
@@ -179,14 +181,17 @@ statement = {
 if_stmt = { if_expr }
 
 let_stmt            = { "let" ~ identifier ~ ":" ~ type_expr ~ "=" ~ expr ~ ";" }
+init_stmt           = { identifier ~ ":=" ~ expr ~ ";" }
 assign_stmt         = { identifier ~ "=" ~ expr ~ ";" }
+assign_index_stmt   = { identifier ~ "[" ~ expr ~ "]" ~ "=" ~ expr ~ ";" }
 assign_field_stmt   = { identifier ~ "." ~ identifier ~ "=" ~ expr ~ ";" }
 return_stmt         = { "return" ~ expr? ~ ";" }
 while_stmt          = { "while" ~ expr ~ block }
 for_stmt            = { "for" ~ "(" ~ for_init ~ ";" ~ expr ~ ";" ~ for_update ~ ")" ~ block }
-for_init            = { let_stmt_no_semi | assign_stmt_no_semi }
+for_init            = { let_stmt_no_semi | init_stmt_no_semi | assign_stmt_no_semi }
 for_update          = { assign_stmt_no_semi | expr }
 let_stmt_no_semi    = { "let" ~ identifier ~ ":" ~ type_expr ~ "=" ~ expr }
+init_stmt_no_semi   = { identifier ~ ":=" ~ expr }
 assign_stmt_no_semi = { identifier ~ "=" ~ expr }
 break_stmt          = { "break" ~ ";" }
 continue_stmt       = { "continue" ~ ";" }

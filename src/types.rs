@@ -395,6 +395,23 @@ impl Type {
         }
     }
 
+    pub fn set_index(&mut self, index: usize, value: Type) -> Result<(), String> {
+        match self {
+            Type::Array(vec) => {
+                if index >= vec.len() {
+                    Err(format!("index out of bounds: {} >= {}", index, vec.len()))
+                } else {
+                    vec[index] = value;
+                    Ok(())
+                }
+            }
+            _ => Err(format!(
+                "cannot use index assignment on type {:?}",
+                self._display()
+            )),
+        }
+    }
+
     pub fn get_type_name(&self) -> Option<&str> {
         match self {
             Type::Object { type_name, .. } => Some(type_name),

@@ -185,6 +185,18 @@ impl Emit for ASTNode {
                     value.emit()
                 )
             }
+            ASTNode::SetIndex {
+                array_name,
+                index,
+                value,
+            } => {
+                format!(
+                    "(assign_index {} {} {})",
+                    array_name,
+                    index.emit(),
+                    value.emit()
+                )
+            }
             ASTNode::Print(e) => format!("(print {})", e.emit()),
             ASTNode::Println(e) => format!("(println {})", e.emit()),
             ASTNode::Note { note, subtree } => {

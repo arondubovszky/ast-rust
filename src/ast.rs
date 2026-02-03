@@ -102,6 +102,12 @@ pub enum ASTNode {
         field_name: String,
         value: Rc<ExprNode>,
     },
+    // arr[0] = 5;
+    SetIndex {
+        array_name: String,
+        index: Rc<ExprNode>,
+        value: Rc<ExprNode>,
+    },
     Print(ExprNode),
     Println(ExprNode),
     Note {
@@ -342,6 +348,26 @@ impl Executable for ASTNode {
                 let mut obj = ctx.get_variable_reference(object_name);
                 obj.set_field(field_name, new_val.clone())?;
                 ctx.set_variable(object_name, obj)?;
+
+                Ok(new_val)
+            }
+            ASTNode::SetIndex {
+                array_name,
+                index,
+                value,
+            } => {
+                let idx_val = index.execute_core(ctx)?;
+                let new_val = value.execute_core(ctx)?;
+
+                let idx = match idx_val {
+                    Type::Int32(i) => i as usize,
+                    Type::Int64(i) => i as usize,
+                    _ => return Err(format!("array index must be an integer, got {:?}", idx_val)),
+                };
+
+                let mut arr = ctx.get_variable_reference(array_name);
+                arr.set_index(idx, new_val.clone())?;
+                ctx.set_variable(array_name, arr)?;
 
                 Ok(new_val)
             }

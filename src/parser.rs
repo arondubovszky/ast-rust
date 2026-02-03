@@ -215,7 +215,9 @@ fn parse_statement(pair: Pair<Rule>) -> ASTNode {
 
     match inner.as_rule() {
         Rule::let_stmt => parse_let_stmt(inner),
+        Rule::init_stmt => parse_init_stmt(inner),
         Rule::assign_stmt => parse_assign_stmt(inner),
+        Rule::assign_index_stmt => parse_assign_index_stmt(inner),
         Rule::assign_field_stmt => parse_assign_field_stmt(inner),
         Rule::return_stmt => parse_return_stmt(inner),
         Rule::if_stmt => {
@@ -255,6 +257,18 @@ fn parse_let_stmt(pair: Pair<Rule>) -> ASTNode {
     ))
 }
 
+fn parse_init_stmt(pair: Pair<Rule>) -> ASTNode {
+    let mut inner = pair.into_inner();
+    let name = inner.next().unwrap().as_str().to_string();
+    let value_expr = parse_expr(inner.next().unwrap());
+
+    ASTNode::DefineVar(DefineVariable::new(
+        Type::Int32(0),
+        &name,
+        Rc::new(value_expr),
+    ))
+}
+
 fn parse_assign_stmt(pair: Pair<Rule>) -> ASTNode {
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
@@ -265,6 +279,19 @@ fn parse_assign_stmt(pair: Pair<Rule>) -> ASTNode {
         &name,
         Rc::new(value_expr),
     ))
+}
+
+fn parse_assign_index_stmt(pair: Pair<Rule>) -> ASTNode {
+    let mut inner = pair.into_inner();
+    let array_name = inner.next().unwrap().as_str().to_string();
+    let index_expr = parse_expr(inner.next().unwrap());
+    let value_expr = parse_expr(inner.next().unwrap());
+
+    ASTNode::SetIndex {
+        array_name,
+        index: Rc::new(index_expr),
+        value: Rc::new(value_expr),
+    }
 }
 
 fn parse_assign_field_stmt(pair: Pair<Rule>) -> ASTNode {
@@ -344,6 +371,16 @@ fn parse_for_init(pair: Pair<Rule>) -> ASTNode {
             let value_expr = parse_expr(parts.next().unwrap());
             ASTNode::DefineVar(DefineVariable::new(
                 type_kind_to_default_type(type_kind),
+                &name,
+                Rc::new(value_expr),
+            ))
+        }
+        Rule::init_stmt_no_semi => {
+            let mut parts = inner.into_inner();
+            let name = parts.next().unwrap().as_str().to_string();
+            let value_expr = parse_expr(parts.next().unwrap());
+            ASTNode::DefineVar(DefineVariable::new(
+                Type::Int32(0),
                 &name,
                 Rc::new(value_expr),
             ))
