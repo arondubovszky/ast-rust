@@ -153,7 +153,7 @@ fn parse_type_kind(pair: Pair<Rule>) -> TypeKind {
         match inner.as_rule() {
             Rule::primitive_type => {
                 kind = match inner.as_str() {
-                    "i32" => TypeKind::Int32,
+                    "i32" | "int" => TypeKind::Int32,
                     "i64" => TypeKind::Int64,
                     "f32" => TypeKind::Float32,
                     "f64" => TypeKind::Float64,

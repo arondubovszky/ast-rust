@@ -198,14 +198,14 @@ mod tests {
         called via FunctionCall node
         */
 
-        let mut functions: FxHashMap<String, Function> = FxHashMap::default();
+        let mut functions: FxHashMap<String, Vec<Function>> = FxHashMap::default();
 
         let mut get_value = Function::new("get_value", Type::Int32(0));
         get_value
             .body
             .push(ASTNode::Expr(ExprNode::Literal(Type::Int32(42))));
 
-        functions.insert(String::from("get_value"), get_value);
+        functions.insert(String::from("get_value"), vec![get_value]);
 
         let functions_rc = Rc::new(functions);
         let mut ctx = Context::new(functions_rc, Rc::new(FxHashMap::default()));
@@ -238,7 +238,7 @@ mod tests {
         called as: factorial(5) -> 120
         */
 
-        let mut functions: FxHashMap<String, Function> = FxHashMap::default();
+        let mut functions: FxHashMap<String, Vec<Function>> = FxHashMap::default();
 
         let mut factorial = Function::new("factorial", Type::Int32(0));
 
@@ -289,7 +289,7 @@ mod tests {
             param_type: TypeKind::Int32,
         });
 
-        functions.insert(String::from("factorial"), factorial);
+        functions.insert(String::from("factorial"), vec![factorial]);
 
         let functions_rc = Rc::new(functions);
         let mut ctx = Context::new(functions_rc, Rc::new(FxHashMap::default()));
@@ -311,6 +311,72 @@ mod tests {
     }
 
     #[test]
+    fn test_function_overloading_by_type() {
+        /*
+        fn ol(s: str) -> void { println("overload1 (string)") }
+        fn ol(s: i32) -> void { println("overload2 (int)") }
+
+        ol("hello") -> calls first overload (Str)
+        ol(42) -> calls second overload (Int32)
+        */
+
+        let mut functions: FxHashMap<String, Vec<Function>> = FxHashMap::default();
+
+        // First overload: ol(s: str)
+        let mut ol_str = Function::new("ol", Type::Void);
+        ol_str
+            .body
+            .push(ASTNode::Println(ExprNode::Literal(Type::Str(
+                "overload1 (string)".to_string(),
+            ))));
+        ol_str.args.push(FunctionParam {
+            name: String::from("s"),
+            param_type: TypeKind::Str,
+        });
+
+        // Second overload: ol(s: i32)
+        let mut ol_int = Function::new("ol", Type::Void);
+        ol_int
+            .body
+            .push(ASTNode::Println(ExprNode::Literal(Type::Str(
+                "overload2 (int)".to_string(),
+            ))));
+        ol_int.args.push(FunctionParam {
+            name: String::from("s"),
+            param_type: TypeKind::Int32,
+        });
+
+        functions.insert(String::from("ol"), vec![ol_str, ol_int]);
+
+        let functions_rc = Rc::new(functions);
+        let mut ctx = Context::new(functions_rc, Rc::new(FxHashMap::default()));
+
+        // Test ol("hello") -> should call first overload (Str)
+        let call_str = ExprNode::FunctionCall {
+            name: String::from("ol"),
+            args: vec![Rc::new(ExprNode::Literal(Type::Str("hello".to_string())))],
+        };
+
+        let res1 = ASTNode::Expr(call_str).execute(&mut ctx).unwrap();
+        match res1 {
+            Type::Str(s) => assert_eq!(s, "overload1 (string)"), // Println returns the printed string
+            _ => panic!("expected Str"),
+        }
+
+        // Test ol(42) -> should call second overload (Int32)
+        let call_int = ExprNode::FunctionCall {
+            name: String::from("ol"),
+            args: vec![Rc::new(ExprNode::Literal(Type::Int32(42)))],
+        };
+
+        let res2 = ASTNode::Expr(call_int).execute(&mut ctx).unwrap();
+        match res2 {
+            Type::Str(s) => assert_eq!(s, "overload2 (int)"), // Println returns the printed string
+            _ => panic!("expected Str"),
+        }
+    }
+
+    #[test]
     fn test_early_return() {
         /*
         fn early_return_test(x: int) -> int {
@@ -322,7 +388,7 @@ mod tests {
         called as: early_return_test(5) -> 99
         */
 
-        let mut functions: FxHashMap<String, Function> = FxHashMap::default();
+        let mut functions: FxHashMap<String, Vec<Function>> = FxHashMap::default();
 
         let mut func = Function::new("early_return_test", Type::Int32(0));
 
@@ -353,7 +419,7 @@ mod tests {
             param_type: TypeKind::Int32,
         });
 
-        functions.insert(String::from("early_return_test"), func);
+        functions.insert(String::from("early_return_test"), vec![func]);
 
         let functions_rc = Rc::new(functions);
         let mut ctx = Context::new(functions_rc, Rc::new(FxHashMap::default()));

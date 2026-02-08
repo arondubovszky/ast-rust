@@ -3,7 +3,7 @@ use rustc_hash::FxHashMap;
 use std::rc::Rc;
 
 use crate::functions::Function;
-use crate::types::{StructDef, Type};
+use crate::types::{StructDef, Type, TypeKind};
 
 pub trait Executable {
     fn execute(&self, ctx: &mut Context) -> Result<Type, String>;
@@ -11,14 +11,14 @@ pub trait Executable {
 
 pub struct Context {
     pub vars: FxHashMap<String, Type>,
-    pub functions: Rc<FxHashMap<String, Function>>,
+    pub functions: Rc<FxHashMap<String, Vec<Function>>>,
     pub structs: Rc<FxHashMap<String, StructDef>>,
     pub return_value: Option<Type>,
 }
 
 impl Context {
     pub fn new(
-        fns: Rc<FxHashMap<String, Function>>,
+        fns: Rc<FxHashMap<String, Vec<Function>>>,
         structs: Rc<FxHashMap<String, StructDef>>,
     ) -> Self {
         Self {
@@ -36,6 +36,38 @@ impl Context {
             functions: Rc::new(FxHashMap::default()),
             structs: Rc::new(FxHashMap::default()),
             return_value: None,
+        }
+    }
+
+    /// Helper to resolve a function by name and argument types.
+    /// Matches argument values against parameter types, considering array element types.
+    fn resolve_function(&self, name: &str, arg_values: &[Type]) -> Option<Function> {
+        self.functions.get(name).and_then(|overloads| {
+            overloads
+                .iter()
+                .find(|f| {
+                    f.args.len() == arg_values.len()
+                        && f.args
+                            .iter()
+                            .zip(arg_values.iter())
+                            .all(|(param, arg_val)| self.type_matches(param.param_type, arg_val))
+                })
+                .cloned()
+        })
+    }
+
+    /// Check if a parameter type matches an argument value's type
+    fn type_matches(&self, param_type: TypeKind, arg_val: &Type) -> bool {
+        match (param_type, arg_val) {
+            (TypeKind::Array, Type::Array(elems)) => {
+                // All elements must have the same type
+                if elems.is_empty() {
+                    return true; // Empty arrays match any array type
+                }
+                let elem_kind = elems[0].get_kind();
+                elems.iter().all(|e| e.get_kind() == elem_kind)
+            }
+            (param_type, arg_val) => param_type == arg_val.get_kind(),
         }
     }
 
@@ -755,16 +787,22 @@ impl ExprNode {
                 Ok(last_result)
             }
             ExprNode::FunctionCall { name, args } => {
-                let func = ctx
-                    .functions
-                    .get(name)
-                    .ok_or_else(|| format!("runtime error: unknown function: {:?}", name))?
-                    .clone(); // shit
-
                 let mut arg_values = Vec::new();
                 for arg_expr in args.iter() {
                     arg_values.push(arg_expr.execute_core(ctx)?);
                 }
+
+                let func = ctx.resolve_function(name, &arg_values).ok_or_else(|| {
+                    let type_names = arg_values
+                        .iter()
+                        .map(|v| format!("{:?}", v.get_kind()))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(
+                        "runtime error: no matching function '{}' with argument types ({})",
+                        name, type_names
+                    )
+                })?;
 
                 let mut local_ctx = Context::new(ctx.functions.clone(), ctx.structs.clone());
                 for (param, val) in func.args.iter().zip(arg_values.into_iter()) {
@@ -1200,7 +1238,8 @@ mod tests {
                 .with_field("name", TypeKind::Str),
         );
 
-        let ctx = &mut Context::new(Rc::new(FxHashMap::default()), Rc::new(structs));
+        let functions: FxHashMap<String, Vec<Function>> = FxHashMap::default();
+        let ctx = &mut Context::new(Rc::new(functions), Rc::new(structs));
 
         // (struct User (id 1) (name "Alice"))
         let struct_literal = ExprNode::StructLiteral {
@@ -1240,7 +1279,8 @@ mod tests {
                 .with_field("name", TypeKind::Str),
         );
 
-        let ctx = &mut Context::new(Rc::new(FxHashMap::default()), Rc::new(structs));
+        let functions: FxHashMap<String, Vec<Function>> = FxHashMap::default();
+        let ctx = &mut Context::new(Rc::new(functions), Rc::new(structs));
 
         // Create user and store in variable
         let struct_literal = ExprNode::StructLiteral {
@@ -1295,7 +1335,8 @@ mod tests {
                 .with_field("name", TypeKind::Str),
         );
 
-        let ctx = &mut Context::new(Rc::new(FxHashMap::default()), Rc::new(structs));
+        let functions: FxHashMap<String, Vec<Function>> = FxHashMap::default();
+        let ctx = &mut Context::new(Rc::new(functions), Rc::new(structs));
 
         // Create user
         let struct_literal = ExprNode::StructLiteral {
