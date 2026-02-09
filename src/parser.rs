@@ -567,6 +567,23 @@ fn parse_primary(pair: Pair<Rule>) -> ExprNode {
             let inner = pair.into_inner().next().unwrap();
             ExprNode::Len(Rc::new(parse_primary(inner)))
         }
+        Rule::typeof_expr => {
+            let inner = pair.into_inner().next().unwrap();
+            ExprNode::TypeOf(Rc::new(parse_primary(inner)))
+        }
+        Rule::push_expr => {
+            let mut parts = pair.into_inner();
+            let array = parse_primary(parts.next().unwrap());
+            let value = parse_primary(parts.next().unwrap());
+            ExprNode::Push {
+                array: Rc::new(array),
+                value: Rc::new(value),
+            }
+        }
+        Rule::pop_expr => {
+            let inner = pair.into_inner().next().unwrap();
+            ExprNode::Pop(Rc::new(parse_primary(inner)))
+        }
         Rule::array_literal => {
             let inner = pair.into_inner().next().unwrap();
             match inner.as_rule() {

@@ -273,6 +273,12 @@ pub enum ExprNode {
         field_name: String,
     },
     Len(Rc<ExprNode>),
+    TypeOf(Rc<ExprNode>),
+    Push {
+        array: Rc<ExprNode>,
+        value: Rc<ExprNode>,
+    },
+    Pop(Rc<ExprNode>),
     Maybe,
 }
 
@@ -842,6 +848,54 @@ impl ExprNode {
                     Type::Str(s) => Ok(Type::Int32(s.len() as i32)),
                     _ => Err(format!("cannot get length of {:?}", val.get_kind())),
                 }
+            }
+            ExprNode::Push { array, value } => {
+                let val = value.execute_core(ctx)?;
+                // array must be a VarRef so we can mutate in place
+                if let ExprNode::Literal(Type::VarRef(name)) = array.as_ref() {
+                    let mut arr = ctx.get_variable_reference(name);
+                    arr.push(val)?;
+                    ctx.set_variable(name, arr)?;
+                    Ok(Type::Void)
+                } else {
+                    Err("push requires a variable".to_string())
+                }
+            }
+            ExprNode::Pop(array) => {
+                if let ExprNode::Literal(Type::VarRef(name)) = array.as_ref() {
+                    let mut arr = ctx.get_variable_reference(name);
+                    match &mut arr {
+                        Type::Array(vec) => {
+                            if vec.is_empty() {
+                                return Err("cannot pop from empty array".to_string());
+                            }
+                            let val = vec.pop().unwrap();
+                            ctx.set_variable(name, arr)?;
+                            Ok(val)
+                        }
+                        _ => Err(format!("cannot pop from {:?}", arr.get_kind())),
+                    }
+                } else {
+                    Err("pop requires a variable".to_string())
+                }
+            }
+            ExprNode::TypeOf(expr) => {
+                let val = expr.execute_core(ctx)?;
+                let name = match val {
+                    Type::Int32(_) => "i32",
+                    Type::Int64(_) => "i64",
+                    Type::Float32(_) => "f32",
+                    Type::Float64(_) => "f64",
+                    Type::Str(_) => "str",
+                    Type::Bool(_) => "bool",
+                    Type::Array(_) => "array",
+                    Type::Object { ref type_name, .. } => type_name.as_str(),
+                    Type::Null => "null",
+                    Type::Void => "void",
+                    Type::Optional(_) => "optional",
+                    _ => "unknown",
+                };
+                Ok(Type::Str(name.to_string()))
             }
             ExprNode::Maybe => {
                 let random_val: bool = rand::thread_rng().r#gen();

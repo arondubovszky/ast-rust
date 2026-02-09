@@ -166,6 +166,9 @@ impl Emit for ExprNode {
                 format!("(list-sized {} {})", length.emit(), fill.emit())
             }
             ExprNode::Len(expr) => format!("(len {})", expr.emit()),
+            ExprNode::TypeOf(expr) => format!("(typeof {})", expr.emit()),
+            ExprNode::Push { array, value } => format!("(push {} {})", array.emit(), value.emit()),
+            ExprNode::Pop(expr) => format!("(pop {})", expr.emit()),
             ExprNode::Maybe => "maybe".to_string(),
         }
     }

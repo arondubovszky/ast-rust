@@ -13,6 +13,17 @@ use pavo::functions::Function;
 use pavo::parser::parse;
 use pavo::types::StructDef;
 
+/// Embedded stdlib — baked into the binary at compile time.
+const STDLIB_STD: &str = include_str!("../stdlib/std.pv");
+
+/// Returns the embedded source for a known stdlib filename, if any.
+fn get_embedded_stdlib(name: &str) -> Option<&'static str> {
+    match name {
+        "std.pv" => Some(STDLIB_STD),
+        _ => None,
+    }
+}
+
 fn main() {
     let child = thread::Builder::new()
         .stack_size(16 * 1024 * 1024)
@@ -22,12 +33,60 @@ fn main() {
     child.join().unwrap();
 }
 
+/// Load an embedded stdlib file by name. Tracks loaded names to prevent duplicates.
+fn load_embedded(
+    name: &str,
+    source: &str,
+    loaded_embedded: &mut HashSet<String>,
+    loaded: &mut HashSet<PathBuf>,
+    all_functions: &mut Vec<Function>,
+    all_structs: &mut Vec<StructDef>,
+) -> Result<(), String> {
+    if !loaded_embedded.insert(name.to_string()) {
+        return Ok(()); // already loaded
+    }
+
+    let program = parse(source)?;
+
+    // Embedded stdlib files can import other embedded files
+    for import_path in &program.imports {
+        if let Some(embedded_src) = get_embedded_stdlib(import_path) {
+            load_embedded(
+                import_path,
+                embedded_src,
+                loaded_embedded,
+                loaded,
+                all_functions,
+                all_structs,
+            )?;
+        } else {
+            return Err(format!(
+                "error: embedded file '{}' imports '{}' which is not a known stdlib file",
+                name, import_path
+            ));
+        }
+    }
+
+    // Never include main() from stdlib files
+    for f in program.functions {
+        if f.name == "main" && f.args.is_empty() {
+            continue;
+        }
+        all_functions.push(f);
+    }
+
+    all_structs.extend(program.structs);
+
+    Ok(())
+}
+
 /// Recursively load a .pv file and all its imports.
 /// Imported files have their zero-arg `main` stripped so only the entry file's main runs.
 fn load_program(
     file_path: &Path,
     is_entry: bool,
     loaded: &mut HashSet<PathBuf>,
+    loaded_embedded: &mut HashSet<String>,
     all_functions: &mut Vec<Function>,
     all_structs: &mut Vec<StructDef>,
 ) -> Result<(), String> {
@@ -43,11 +102,29 @@ fn load_program(
 
     let program = parse(&source)?;
 
-    // Process imports first (relative to this file's directory)
+    // Process imports first — check embedded stdlib before filesystem
     let dir = canonical.parent().unwrap();
     for import_path in &program.imports {
-        let resolved = dir.join(import_path);
-        load_program(&resolved, false, loaded, all_functions, all_structs)?;
+        if let Some(embedded_src) = get_embedded_stdlib(import_path) {
+            load_embedded(
+                import_path,
+                embedded_src,
+                loaded_embedded,
+                loaded,
+                all_functions,
+                all_structs,
+            )?;
+        } else {
+            let resolved = dir.join(import_path);
+            load_program(
+                &resolved,
+                false,
+                loaded,
+                loaded_embedded,
+                all_functions,
+                all_structs,
+            )?;
+        }
     }
 
     // Add functions — strip zero-arg main() from imported (non-entry) files
@@ -75,6 +152,7 @@ fn run_interpreter() {
 
     // Recursively load entry file + all imports
     let mut loaded = HashSet::new();
+    let mut loaded_embedded = HashSet::new();
     let mut all_functions = Vec::new();
     let mut all_structs = Vec::new();
 
@@ -82,6 +160,7 @@ fn run_interpreter() {
         path,
         true,
         &mut loaded,
+        &mut loaded_embedded,
         &mut all_functions,
         &mut all_structs,
     ) {

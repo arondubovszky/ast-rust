@@ -172,6 +172,7 @@ impl Add for Type {
             (Type::Str(a), Type::Int64(b)) => Ok(Type::Str(a + &b.to_string())),
             (Type::Str(a), Type::Float32(b)) => Ok(Type::Str(a + &b.to_string())),
             (Type::Str(a), Type::Float64(b)) => Ok(Type::Str(a + &b.to_string())),
+            (Type::Str(a), Type::Bool(b)) => Ok(Type::Str(a + &b.to_string())),
             (Type::Bool(a), Type::Bool(b)) => Ok(Type::Bool(a | b)),
             (a, b) => Err(format!("Cannot add {:?} and {:?}", a, b)),
         }
