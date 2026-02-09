@@ -1,0 +1,100 @@
+// === println overloads ===
+
+fn println(x: i32) -> void {
+    putln x;
+}
+
+fn println(x: i64) -> void {
+    putln x;
+}
+
+fn println(x: f32) -> void {
+    putln x;
+}
+
+fn println(x: f64) -> void {
+    putln x;
+}
+
+fn println(x: str) -> void {
+    putln x;
+}
+
+fn println(x: bool) -> void {
+    putln x;
+}
+
+// === print overloads ===
+
+fn print(x: i32) -> void {
+    put x;
+}
+
+fn print(x: i64) -> void {
+    put x;
+}
+
+fn print(x: f32) -> void {
+    put x;
+}
+
+fn print(x: f64) -> void {
+    put x;
+}
+
+fn print(x: str) -> void {
+    put x;
+}
+
+fn print(x: bool) -> void {
+    put x;
+}
+
+// === to_str overloads ===
+
+fn to_str(x: i32) -> str {
+    return "" + x;
+}
+
+fn to_str(x: i64) -> str {
+    return "" + x;
+}
+
+fn to_str(x: f32) -> str {
+    return "" + x;
+}
+
+fn to_str(x: f64) -> str {
+    return "" + x;
+}
+
+fn to_str(x: bool) -> str {
+    return "" + x;
+}
+
+fn to_str(x: str) -> str {
+    return x;
+}
+
+
+// === string utils ===
+
+
+fn split(s: str, delimiter: str) -> [str] {
+    let result: [str] = [0;""];
+
+    let current: str = "";
+
+    for (i := 0; i<len s; i++) {
+        if (s[i]==delimiter) {
+            push result current;
+            current = "";
+        } else {
+            current = current + s[i];
+        }
+    }
+
+    push result current;
+
+    return result;
+}
