@@ -125,6 +125,7 @@ pub enum Type {
 }
 
 impl Castable<bool> for Type {
+    /// casting to bool
     fn lowkey_cast(self) -> Result<bool, String> {
         match self {
             Type::Bool(b) => Ok(b),

@@ -2,6 +2,7 @@ use rand::Rng;
 use rustc_hash::FxHashMap;
 use std::rc::Rc;
 
+use crate::Castable;
 use crate::functions::Function;
 use crate::types::{StructDef, Type, TypeKind};
 
@@ -751,11 +752,9 @@ impl ExprNode {
                 then_branch,
                 else_branch,
             } => {
-                let cond_res = statement.execute_core(ctx)?;
-
-                let cond_res_bool = match cond_res {
-                    Type::Bool(b) => b,
-                    _ => return Err(format!("the if condition cannot be casted to <bool>")),
+                let cond_res_bool = match statement.execute_core(ctx)?.lowkey_cast() {
+                    Ok(b) => b,
+                    Err(_e) => return Err(format!("the if condition cannot be casted to <bool>")),
                 };
 
                 if cond_res_bool {
