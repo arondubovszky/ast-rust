@@ -162,6 +162,10 @@ impl Emit for ExprNode {
             ExprNode::Field { object, field_name } => {
                 format!("(field {} {})", object.emit(), field_name)
             }
+            ExprNode::ArraySized { length, fill } => {
+                format!("(list-sized {} {})", length.emit(), fill.emit())
+            }
+            ExprNode::Len(expr) => format!("(len {})", expr.emit()),
             ExprNode::Maybe => "maybe".to_string(),
         }
     }

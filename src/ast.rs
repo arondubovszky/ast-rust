@@ -252,6 +252,11 @@ pub enum ExprNode {
         statement: Rc<ExprNode>,
         body: Rc<Vec<ASTNode>>,
     },
+    // [length; fill_value]
+    ArraySized {
+        length: Rc<ExprNode>,
+        fill: Rc<ExprNode>,
+    },
     // function definitions will be handled during parsing
     FunctionCall {
         name: String,
@@ -267,6 +272,7 @@ pub enum ExprNode {
         object: Rc<ExprNode>,
         field_name: String,
     },
+    Len(Rc<ExprNode>),
     Maybe,
 }
 
@@ -422,6 +428,16 @@ impl ExprNode {
                     values.push(elem.execute_core(ctx)?);
                 }
                 Ok(Type::Array(values))
+            }
+            ExprNode::ArraySized { length, fill } => {
+                let len_val = length.execute_core(ctx)?;
+                let fill_val = fill.execute_core(ctx)?;
+                let len = match len_val {
+                    Type::Int32(n) => n as usize,
+                    Type::Int64(n) => n as usize,
+                    _ => return Err(format!("array size must be an integer, got {:?}", len_val)),
+                };
+                Ok(Type::Array(vec![fill_val; len]))
             }
             ExprNode::Index { array, index } => {
                 let arr_val = array.execute_core(ctx)?;
@@ -818,6 +834,14 @@ impl ExprNode {
                     }
                 }
                 Ok(result)
+            }
+            ExprNode::Len(expr) => {
+                let val = expr.execute_core(ctx)?;
+                match val {
+                    Type::Array(arr) => Ok(Type::Int32(arr.len() as i32)),
+                    Type::Str(s) => Ok(Type::Int32(s.len() as i32)),
+                    _ => Err(format!("cannot get length of {:?}", val.get_kind())),
+                }
             }
             ExprNode::Maybe => {
                 let random_val: bool = rand::thread_rng().r#gen();

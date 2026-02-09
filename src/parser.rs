@@ -37,10 +37,11 @@ lazy_static! {
     };
 }
 
-/// Parsed output: top-level items split into functions, structs, and loose statements.
+/// Parsed output: top-level items split into functions, structs, and imports.
 pub struct ParsedProgram {
     pub functions: Vec<Function>,
     pub structs: Vec<StructDef>,
+    pub imports: Vec<String>,
 }
 
 /// Parse source code into a `ParsedProgram`.
@@ -52,6 +53,7 @@ pub fn parse(input: &str) -> Result<ParsedProgram, String> {
 
     let mut functions = Vec::new();
     let mut structs = Vec::new();
+    let mut imports = Vec::new();
 
     for pair in program.into_inner() {
         match pair.as_rule() {
@@ -60,6 +62,10 @@ pub fn parse(input: &str) -> Result<ParsedProgram, String> {
                 match inner.as_rule() {
                     Rule::fn_def => functions.push(parse_fn_def(inner)),
                     Rule::struct_def => structs.push(parse_struct_def(inner)),
+                    Rule::import_stmt => {
+                        let path = parse_string_literal(inner.into_inner().next().unwrap());
+                        imports.push(path);
+                    }
                     Rule::note_def => {
                         // note wraps another top-level item; for now just extract the inner item
                         let mut inner_pairs = inner.into_inner();
@@ -84,7 +90,11 @@ pub fn parse(input: &str) -> Result<ParsedProgram, String> {
         }
     }
 
-    Ok(ParsedProgram { functions, structs })
+    Ok(ParsedProgram {
+        functions,
+        structs,
+        imports,
+    })
 }
 
 fn parse_fn_def(pair: Pair<Rule>) -> Function {
@@ -462,10 +472,27 @@ fn parse_expr_pratt(pairs: Pairs<Rule>) -> ExprNode {
                 let inner = op.into_inner().next().unwrap();
                 match inner.as_rule() {
                     Rule::dot_access => {
-                        let field_name = inner.into_inner().next().unwrap().as_str().to_string();
-                        ExprNode::Field {
-                            object: Rc::new(lhs),
-                            field_name,
+                        let mut parts = inner.into_inner();
+                        let name = parts.next().unwrap().as_str().to_string();
+                        match parts.next() {
+                            Some(call_args_pair) if call_args_pair.as_rule() == Rule::call_args => {
+                                // .method(args) -> method(self, args)
+                                let mut args = vec![Rc::new(lhs)];
+                                args.extend(
+                                    call_args_pair
+                                        .into_inner()
+                                        .filter(|p| p.as_rule() == Rule::expr)
+                                        .map(|p| Rc::new(parse_expr(p))),
+                                );
+                                ExprNode::FunctionCall { name, args }
+                            }
+                            _ => {
+                                // .field
+                                ExprNode::Field {
+                                    object: Rc::new(lhs),
+                                    field_name: name,
+                                }
+                            }
                         }
                     }
                     Rule::index_access => {
@@ -536,13 +563,32 @@ fn parse_primary(pair: Pair<Rule>) -> ExprNode {
             ExprNode::Literal(Type::VarRef(name))
         }
         Rule::if_expr => parse_if_expr(pair),
+        Rule::len_expr => {
+            let inner = pair.into_inner().next().unwrap();
+            ExprNode::Len(Rc::new(parse_primary(inner)))
+        }
         Rule::array_literal => {
-            let elements: Vec<Rc<ExprNode>> = pair
-                .into_inner()
-                .filter(|p| p.as_rule() == Rule::expr)
-                .map(|p| Rc::new(parse_expr(p)))
-                .collect();
-            ExprNode::ArrayLiteral(elements)
+            let inner = pair.into_inner().next().unwrap();
+            match inner.as_rule() {
+                Rule::array_sized => {
+                    let mut parts = inner.into_inner();
+                    let length = parse_expr(parts.next().unwrap());
+                    let fill = parse_expr(parts.next().unwrap());
+                    ExprNode::ArraySized {
+                        length: Rc::new(length),
+                        fill: Rc::new(fill),
+                    }
+                }
+                Rule::array_elements => {
+                    let elements: Vec<Rc<ExprNode>> = inner
+                        .into_inner()
+                        .filter(|p| p.as_rule() == Rule::expr)
+                        .map(|p| Rc::new(parse_expr(p)))
+                        .collect();
+                    ExprNode::ArrayLiteral(elements)
+                }
+                _ => unreachable!(),
+            }
         }
         Rule::struct_literal => parse_struct_literal(pair),
         Rule::expr => parse_expr(pair),

@@ -11,12 +11,18 @@ cargo build --release
 
 The interpreter looks for a `main()` function and executes it.
 
-## Syntax Overview
-
-Pavo uses Rust-like syntax with some simplifications. Comments use `//`.
+## Hello World
 
 ```pavo
-// This is a comment
+fn main() -> void {
+    putln "Hello, world!";
+}
+```
+
+Or with the standard library:
+
+```pavo
+import "std.pv";
 
 fn main() -> void {
     println("Hello, world!");
@@ -27,56 +33,54 @@ fn main() -> void {
 
 ### Primitives
 
-| Type   | Description              |
-|--------|--------------------------|
-| `i32`  | 32-bit signed integer    |
-| `i64`  | 64-bit signed integer    |
-| `f32`  | 32-bit float             |
-| `f64`  | 64-bit float             |
-| `bool` | Boolean (`true`/`false`) |
-| `str`  | String                   |
-| `void` | No return value          |
+| Type   | Alias | Description              |
+|--------|-------|--------------------------|
+| `i32`  | `int` | 32-bit signed integer    |
+| `i64`  |       | 64-bit signed integer    |
+| `f32`  |       | 32-bit float             |
+| `f64`  |       | 64-bit float             |
+| `bool` |       | Boolean (`true`/`false`) |
+| `str`  |       | String                   |
+| `void` |       | No return value          |
 
 ### Arrays
 
 ```pavo
 let nums: [i32] = [1, 2, 3, 4, 5];
-let nested: [[i32]] = [[1, 2], [3, 4]];
 ```
 
-### Optional types
-
-Append `!` to any type to mark it as optional (nullable):
+Create arrays of a given size with a fill value using the `[size; value]` syntax:
 
 ```pavo
-let maybe: i32! = null;
+let zeros: [i32] = [10; 0];     // 10 zeros
+let grid: [str] = [5; "empty"]; // 5 copies of "empty"
 ```
 
-### User-defined structs
+Get the length of an array (or string) with `len`:
+
+```pavo
+let n: i32 = len nums;       // 5
+let s: i32 = len "hello";    // 5
+```
+
+`len` is a built-in operator, so both `len arr` and `len(arr)` work.
+
+### Structs
 
 ```pavo
 struct Point {
     x: f64,
     y: f64,
 }
-```
 
-## Literals
-
-```pavo
-42          // i32
--7          // negative integer
-3.14        // f64
-"hello"     // str
-true        // bool
-false       // bool
-null        // null
-[1, 2, 3]  // array
+let p: Point = Point { x: 3.0, y: 4.0 };
+println(p.x);    // 3
+p.x = 10.0;
 ```
 
 ## Variables
 
-Variables are declared with `let` and require a type annotation:
+Declare with `let` and a type annotation:
 
 ```pavo
 let x: i32 = 10;
@@ -84,79 +88,54 @@ let name: str = "Alice";
 let pi: f64 = 3.14159;
 ```
 
-Assignment to existing variables:
+Shorthand with `:=` (infers as `i32`):
+
+```pavo
+x := 5;
+```
+
+Reassignment:
 
 ```pavo
 x = 20;
-x = x + 5;
 ```
 
 ## Operators
 
 ### Arithmetic
 
-| Operator | Description    | Example     |
-|----------|----------------|-------------|
-| `+`      | Add            | `a + b`     |
-| `-`      | Subtract       | `a - b`     |
-| `*`      | Multiply       | `a * b`     |
-| `/`      | Divide         | `a / b`     |
-| `%`      | Modulo         | `a % b`     |
-| `**`     | Power          | `2 ** 10`   |
+| Op   | Description | Example   |
+|------|-------------|-----------|
+| `+`  | Add         | `a + b`   |
+| `-`  | Subtract    | `a - b`   |
+| `*`  | Multiply    | `a * b`   |
+| `/`  | Divide      | `a / b`   |
+| `%`  | Modulo      | `a % b`   |
+| `**` | Power       | `2 ** 10` |
 
 ### Comparison
 
-| Operator | Description      |
-|----------|------------------|
-| `==`     | Equal            |
-| `!=`     | Not equal        |
-| `<`      | Less than        |
-| `>`      | Greater than     |
-| `<=`     | Less or equal    |
-| `>=`     | Greater or equal |
+`==`, `!=`, `<`, `>`, `<=`, `>=`
 
 ### Logical
 
-| Operator | Description |
-|----------|-------------|
-| `&&`     | And         |
-| `\|\|`   | Or          |
-| `!`      | Not         |
+`&&`, `||`, `!`
 
 ### Bitwise
 
-| Operator | Description |
-|----------|-------------|
-| `&`      | And         |
-| `\|`     | Or          |
-| `^`      | Xor         |
-| `~`      | Not         |
-
-### Prefix
-
-| Operator | Description  | Example |
-|----------|--------------|---------|
-| `-`      | Negate       | `-x`    |
-| `!`      | Logical not  | `!flag` |
-| `~`      | Bitwise not  | `~bits` |
+`&`, `|`, `^`, `~`
 
 ### Postfix
 
-| Operator | Description | Example    |
-|----------|-------------|------------|
-| `++`     | Increment   | `counter++` |
-| `--`     | Decrement   | `counter--` |
-
-`++` and `--` mutate the variable in place.
+`++` (increment), `--` (decrement) — mutate in place.
 
 ### String concatenation
 
-The `+` operator concatenates strings and coerces other types to strings:
+`+` concatenates strings and coerces other types:
 
 ```pavo
-println("value: " + 42);       // "value: 42"
-println("pi is " + 3.14);      // "pi is 3.14"
-println("hello" + " " + "world");
+putln "value: " + 42;       // "value: 42"
+putln "pi is " + 3.14;      // "pi is 3.14"
 ```
 
 ## Control Flow
@@ -165,13 +144,11 @@ println("hello" + " " + "world");
 
 ```pavo
 if x > 0 {
-    println("positive");
+    putln "positive";
+} else if x < 0 {
+    putln "negative";
 } else {
-    if x < 0 {
-        println("negative");
-    } else {
-        println("zero");
-    }
+    putln "zero";
 }
 ```
 
@@ -180,25 +157,23 @@ if x > 0 {
 ```pavo
 let i: i32 = 0;
 while i < 10 {
-    println(i);
+    putln i;
     i++;
 }
 ```
 
-### C-style For
+### For
+
+C-style for loops:
 
 ```pavo
 for (let i: i32 = 0; i < 10; i++) {
-    println(i);
+    putln i;
 }
-```
 
-The init clause accepts `let` declarations or assignments. The update clause accepts assignments or expressions (like `i++`):
-
-```pavo
-let k: i32 = 0;
-for (k = 0; k < 5; k = k + 1) {
-    println(k);
+// shorthand init
+for (i := 0; i < 5; i++) {
+    putln i;
 }
 ```
 
@@ -215,20 +190,15 @@ while true {
 
 ## Functions
 
-Functions are defined with `fn`, require typed parameters, and a return type:
+Functions require typed parameters and a return type:
 
 ```pavo
 fn add(a: i32, b: i32) -> i32 {
     return a + b;
 }
 
-fn greet(name: str) -> str {
-    return "Hello, " + name + "!";
-}
-
-fn main() -> void {
-    println(add(3, 4));
-    println(greet("Pavo"));
+fn greet(name: str) -> void {
+    putln "Hello, " + name + "!";
 }
 ```
 
@@ -241,145 +211,275 @@ fn factorial(n: i32) -> i32 {
     }
     return n * factorial(n - 1);
 }
+```
 
-fn fibonacci(n: i32) -> i32 {
-    if n <= 0 { return 0; }
-    if n == 1 { return 1; }
-    return fibonacci(n - 1) + fibonacci(n - 2);
+### Function Overloading
+
+Functions can be overloaded by parameter types. The interpreter picks the right version based on the argument types at runtime:
+
+```pavo
+fn describe(x: i32) -> str {
+    return "an integer: " + x;
+}
+
+fn describe(x: str) -> str {
+    return "a string: " + x;
+}
+
+fn main() -> void {
+    putln describe(42);       // "an integer: 42"
+    putln describe("hello");  // "a string: hello"
 }
 ```
 
-## Structs
+### Method Syntax (UFCS)
 
-### Definition
+Any function can be called with dot syntax. `x.foo(y)` is identical to `foo(x, y)`. This is called Uniform Function Call Syntax:
 
 ```pavo
-struct User {
-    id: i32,
-    name: str,
-    score: f64,
+fn double(x: i32) -> i32 {
+    return x + x;
+}
+
+fn main() -> void {
+    putln double(5);     // 10
+    putln 5.double();    // 10 — same thing
+
+    // chaining
+    5.double().double(); // 20
 }
 ```
 
-### Construction
+This works with any function — the receiver becomes the first argument. Combined with overloading, you get method-like ergonomics without a class system:
 
 ```pavo
-let u: User = User { id: 1, name: "Alice", score: 95.5 };
+import "std.pv";
+
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn main() -> void {
+    3.add(4).println();  // 7
+}
 ```
 
-### Field access and assignment
+## Modules and Imports
+
+Split code across files with `import`:
 
 ```pavo
-println(u.name);    // Alice
-u.name = "Bob";
-u.score = 88.0;
+import "math.pv";
+import "../lib/utils.pv";
 ```
 
-## Arrays
+Imports are resolved relative to the importing file's directory. All functions and structs from the imported file are merged into the global scope (like Python's `from module import *`).
 
-### Literals and indexing
+### Every file can have `main()`
+
+Each `.pv` file can define its own `main()` function. It only runs when that file is the entry point:
 
 ```pavo
-let arr: [i32] = [10, 20, 30, 40, 50];
-println(arr[0]);    // 10
-println(arr[2]);    // 30
+// utils.pv
+fn greet(name: str) -> void {
+    putln "Hello, " + name;
+}
 
-let sum: i32 = arr[1] + arr[3];
+fn main() -> void {
+    // only runs via: pavo utils.pv
+    greet("from utils");
+}
 ```
+
+```pavo
+// app.pv
+import "utils.pv";
+
+fn main() -> void {
+    // utils.pv's main() is ignored here
+    greet("from app");
+}
+```
+
+```bash
+pavo app.pv    # prints "Hello, from app"
+pavo utils.pv  # prints "Hello, from utils"
+```
+
+Circular imports are handled automatically — files are only loaded once.
+
+## Standard Library
+
+Import the standard library with:
+
+```pavo
+import "std.pv";
+```
+
+It provides:
+
+| Function                            | Description                    |
+|-------------------------------------|--------------------------------|
+| `println(x: i32/i64/f32/f64/str/bool)` | Print with newline         |
+| `print(x: i32/i64/f32/f64/str/bool)`   | Print without newline      |
+| `array_new(size: i32, fill: i32)`   | Create a sized `Array` struct  |
+| `array_get(arr: Array, idx: i32)`   | Get element from `Array`       |
+
+The stdlib also defines the `Array` struct (data + size pair):
+
+```pavo
+struct Array {
+    data: [i32],
+    size: i32,
+}
+```
+
+### Built-in vs stdlib
+
+Some operations are built into the language itself (not part of `std.pv`):
+
+| Built-in   | Description                    | Example          |
+|------------|--------------------------------|------------------|
+| `put`      | Print without newline          | `put "hi";`      |
+| `putln`    | Print with newline             | `putln 42;`      |
+| `len`      | Length of array or string      | `len arr`        |
+
+The `println`/`print` functions in the stdlib are wrappers around `put`/`putln` that support function call syntax and UFCS (`42.println()`).
 
 ## Print
 
-Two built-in print functions:
+There are two layers of printing:
+
+**Built-in statements** — always available, no import needed:
 
 ```pavo
-print("no newline");
-println("with newline");
+put "no newline";
+putln "with newline";
 ```
 
-Strings print without quotes. Other types are formatted automatically.
-
-## Notes
-
-Notes are feature annotations that wrap top-level items:
+**Stdlib functions** — require `import "std.pv"`, support UFCS:
 
 ```pavo
-#[note("recursion")]
-fn fibonacci(n: i32) -> i32 {
-    if n <= 1 { return n; }
-    return fibonacci(n - 1) + fibonacci(n - 2);
-}
+import "std.pv";
+
+print("no newline");
+println("with newline");
+"hello".println();
+42.println();
 ```
 
 ## Complete Example
 
 ```pavo
-struct Point {
+import "std.pv";
+
+struct Vec2 {
     x: f64,
     y: f64,
 }
 
-fn make_point(x: f64, y: f64) -> Point {
-    return Point { x: x, y: y };
+fn vec2(x: f64, y: f64) -> Vec2 {
+    return Vec2 { x: x, y: y };
 }
 
-fn describe(p: Point) -> str {
-    return "(" + p.x + ", " + p.y + ")";
+fn add(a: Vec2, b: Vec2) -> Vec2 {
+    return vec2(a.x + b.x, a.y + b.y);
+}
+
+fn scale(v: Vec2, s: f64) -> Vec2 {
+    return vec2(v.x * s, v.y * s);
+}
+
+fn dot(a: Vec2, b: Vec2) -> f64 {
+    return a.x * b.x + a.y * b.y;
+}
+
+fn display(v: Vec2) -> void {
+    println("(" + v.x + ", " + v.y + ")");
+}
+
+fn is_prime(n: i32) -> bool {
+    if n < 2 { return false; }
+    for (i := 2; i * i <= n; i++) {
+        if n % i == 0 { return false; }
+    }
+    return true;
+}
+
+fn sort(arr: [i32]) -> [i32] {
+    let n: i32 = len arr;
+    for (i := 0; i < n - 1; i++) {
+        for (j := 0; j < n - 1 - i; j++) {
+            if arr[j] > arr[j + 1] {
+                let tmp: i32 = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = tmp;
+            }
+        }
+    }
+    return arr;
+}
+
+fn print_arr(arr: [i32]) -> void {
+    print("[");
+    for (i := 0; i < len arr; i++) {
+        if i > 0 { print(", "); }
+        print(arr[i]);
+    }
+    println("]");
 }
 
 fn main() -> void {
-    // Variables and arithmetic
-    let a: i32 = 10;
-    let b: i32 = 20;
-    println(a + b);
+    // Vec2 with UFCS
+    let a: Vec2 = vec2(3.0, 4.0);
+    let b: Vec2 = vec2(1.0, 2.0);
+    a.add(b).display();           // (4, 6)
+    a.scale(2.0).display();       // (6, 8)
+    a.dot(b).println();           // 11
 
-    // Strings
-    println("Hello, " + "Pavo!");
-
-    // Control flow
-    for (let i: i32 = 0; i < 5; i++) {
-        println(i);
+    // Primes
+    for (i := 2; i <= 30; i++) {
+        if is_prime(i) {
+            print(i);
+            print(" ");
+        }
     }
+    println("");
 
-    // Structs
-    let p: Point = make_point(3.0, 4.0);
-    println(describe(p));
-
-    // Recursion
-    println(factorial(10));
-
-    // Arrays
-    let nums: [i32] = [1, 2, 3];
-    println(nums[0] + nums[1] + nums[2]);
+    // Array ops
+    let nums: [i32] = [5, 3, 8, 1, 9, 2, 7, 4, 6];
+    nums.sort().print_arr();      // [1, 2, 3, 4, 5, 6, 7, 8, 9]
 }
+```
 
-fn factorial(n: i32) -> i32 {
-    if n <= 1 { return 1; }
-    return n * factorial(n - 1);
+## Notes
+
+Feature annotations that wrap top-level items:
+
+```pavo
+#[note("pure")]
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
 }
 ```
 
 ## Architecture
 
-The implementation lives in `src/` and is structured as both a library and a CLI binary:
+The implementation lives in `src/`:
 
-- `grammar.pest` -- PEG grammar (parsed by [pest](https://pest.rs))
-- `parser.rs` -- pest parser, Pratt expression parser, AST construction
-- `ast.rs` -- AST node types, tree-walking execution engine
-- `types.rs` -- `Type` enum (Int32, Int64, Float32, Float64, Str, Bool, Array, Struct, etc.)
-- `functions.rs` -- function representation and calling convention
-- `emit.rs` -- AST-to-source serialization
-- `main.rs` -- CLI entry point (`pavo <file.pv>`)
+| File            | Description                                           |
+|-----------------|-------------------------------------------------------|
+| `grammar.pest`  | PEG grammar (parsed by [pest](https://pest.rs))      |
+| `parser.rs`     | Pest parser, Pratt expression parser, AST construction|
+| `ast.rs`        | AST node types, tree-walking execution engine         |
+| `types.rs`      | `Type` enum (Int32, Str, Array, Object, etc.)         |
+| `functions.rs`  | Function representation and calling convention        |
+| `emit.rs`       | AST-to-S-expression serialization                     |
+| `main.rs`       | CLI entry point, module loader                        |
 
-## Building
-
-```bash
-cargo build --release
-```
-
-The binary is placed at `target/release/pavo`.
-
-## Running Tests
+## Building and Testing
 
 ```bash
-cargo test
+cargo build --release    # binary at target/release/pavo
+cargo test               # run all tests
 ```
