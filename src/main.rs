@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::env;
 use std::fs;
@@ -8,9 +9,11 @@ use std::thread;
 
 use rustc_hash::FxHashMap;
 
+use pavo::Type;
 use pavo::ast::{Context, Executable};
 use pavo::functions::Function;
 use pavo::parser::parse;
+use pavo::templates::{expand_templates, expand_templates_only};
 use pavo::types::StructDef;
 
 /// Embedded stdlib — baked into the binary at compile time.
@@ -46,7 +49,8 @@ fn load_embedded(
         return Ok(()); // already loaded
     }
 
-    let program = parse(source)?;
+    let expanded = expand_templates(source)?;
+    let program = parse(&expanded)?;
 
     // Embedded stdlib files can import other embedded files
     for import_path in &program.imports {
@@ -100,7 +104,8 @@ fn load_program(
     let source = fs::read_to_string(&canonical)
         .map_err(|e| format!("error: could not read '{}': {}", canonical.display(), e))?;
 
-    let program = parse(&source)?;
+    let expanded = expand_templates(&source)?;
+    let program = parse(&expanded)?;
 
     // Process imports first — check embedded stdlib before filesystem
     let dir = canonical.parent().unwrap();
@@ -144,11 +149,38 @@ fn run_interpreter() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("usage: pavo <file.pv>");
+        eprintln!("usage: pavo [--expand] <file.pv>");
         process::exit(1);
     }
 
-    let path = Path::new(&args[1]);
+    let expand_only = args.iter().any(|a| a == "--expand");
+    let file_arg = args.iter().find(|a| !a.starts_with('-') && *a != &args[0]);
+    let file_arg = match file_arg {
+        Some(f) => f,
+        None => {
+            eprintln!("usage: pavo [--expand] <file.pv>");
+            process::exit(1);
+        }
+    };
+
+    if expand_only {
+        let source = fs::read_to_string(file_arg).unwrap_or_else(|e| {
+            eprintln!("error: could not read '{}': {}", file_arg, e);
+            process::exit(1);
+        });
+        match expand_templates_only(&source) {
+            Ok(expanded) => {
+                print!("{}", expanded);
+                return;
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                process::exit(1);
+            }
+        }
+    }
+
+    let path = Path::new(file_arg);
 
     // Recursively load entry file + all imports
     let mut loaded = HashSet::new();
@@ -184,6 +216,7 @@ fn run_interpreter() {
 
     let fn_rc = Rc::new(fn_map);
     let struct_rc = Rc::new(struct_map);
+    let static_vars = Rc::new(RefCell::new(FxHashMap::default()));
 
     // Look for main() - get the zero-argument version
     let main_fn = match fn_rc.get("main") {
@@ -200,7 +233,7 @@ fn run_interpreter() {
         }
     };
 
-    let mut ctx = Context::new(fn_rc, struct_rc);
+    let mut ctx = Context::new(fn_rc, struct_rc, static_vars);
 
     for stmt in &main_fn.body {
         match stmt.execute(&mut ctx) {

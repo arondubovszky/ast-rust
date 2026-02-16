@@ -22,8 +22,11 @@ pub enum TypeKind {
     Optional,
 }
 
-pub trait Castable<T> {
-    fn lowkey_cast(self) -> Result<T, String>;
+pub trait Castable {
+    fn lowkey_cast(self) -> Result<bool, String>;
+
+    fn cast_up(self) -> Result<Type, String>;
+    fn cast_down(self) -> Result<Type, String>;
 }
 
 /// Struct definition
@@ -124,7 +127,7 @@ pub enum Type {
     Optional(Box<Type>), // Some(val) or None represented as Optional(Box::new(Null)),
 }
 
-impl Castable<bool> for Type {
+impl Castable for Type {
     /// casting to bool
     fn lowkey_cast(self) -> Result<bool, String> {
         match self {
@@ -147,6 +150,27 @@ impl Castable<bool> for Type {
             Type::Null => Ok(false),
             Type::Optional(inner) => inner.lowkey_cast(),
             _ => Err(format!("cannot cast to bool")),
+        }
+    }
+
+    fn cast_up(self) -> Result<Type, String> {
+        match self {
+            Type::Bool(b) => Ok(Type::Int32(b as i32)),
+            Type::Int32(x) => Ok(Type::Int64(x as i64)),
+            Type::Int64(x) => Ok(Type::Int64(x)),
+            Type::Float32(f) => Ok(Type::Float64(f as f64)),
+            Type::Float64(f) => Ok(Type::Float64(f)),
+            _ => Err(format!("cannot be upcasted")),
+        }
+    }
+
+    fn cast_down(self) -> Result<Type, String> {
+        match self {
+            Type::Int32(x) => Ok(Type::Int32(x)),
+            Type::Int64(x) => Ok(Type::Int32(x as i32)),
+            Type::Float32(f) => Ok(Type::Float32(f)),
+            Type::Float64(f) => Ok(Type::Float32(f as f32)),
+            _ => Err(format!("cannot be downcasted")),
         }
     }
 }

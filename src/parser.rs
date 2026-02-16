@@ -4,13 +4,15 @@ use pest::pratt_parser::PrattParser;
 use pest_derive::Parser;
 use std::rc::Rc;
 
-use crate::ast::{ASTNode, DefineVariable, ExprNode, SetVariable, Symbol};
+use crate::ast::{
+    ASTNode, DefineVariable, DefineVariableStatic, ExprNode, SetVariable, SetVariableStatic, Symbol,
+};
 use crate::functions::{Function, FunctionParam};
 use crate::types::{StructDef, Type, TypeKind};
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
-pub struct Lang1Parser;
+pub struct PavoParser;
 
 lazy_static! {
     static ref PRATT: PrattParser<Rule> = {
@@ -47,7 +49,7 @@ pub struct ParsedProgram {
 /// Parse source code into a `ParsedProgram`.
 pub fn parse(input: &str) -> Result<ParsedProgram, String> {
     let mut pairs =
-        Lang1Parser::parse(Rule::program, input).map_err(|e| format!("parse error:\n{}", e))?;
+        PavoParser::parse(Rule::program, input).map_err(|e| format!("parse error:\n{}", e))?;
 
     let program = pairs.next().unwrap(); // the single `program` pair
 
@@ -112,10 +114,12 @@ fn parse_fn_def(pair: Pair<Rule>) -> Function {
             Rule::param => {
                 let mut p = item.into_inner();
                 let pname = p.next().unwrap().as_str().to_string();
-                let ptype = parse_type_kind(p.next().unwrap());
+                let type_pair = p.next().unwrap();
+                let (ptype, arr_elem) = parse_type_kind_with_array(type_pair);
                 params.push(FunctionParam {
                     name: pname,
                     param_type: ptype,
+                    array_element_type: arr_elem,
                 });
             }
             Rule::type_expr => {
@@ -190,6 +194,44 @@ fn parse_type_kind(pair: Pair<Rule>) -> TypeKind {
     kind
 }
 
+/// Like `parse_type_kind`, but also extracts the element type for array params.
+fn parse_type_kind_with_array(pair: Pair<Rule>) -> (TypeKind, Option<TypeKind>) {
+    let mut kind = TypeKind::Void;
+    let mut array_elem = None;
+
+    for inner in pair.into_inner() {
+        match inner.as_rule() {
+            Rule::primitive_type => {
+                kind = match inner.as_str() {
+                    "i32" | "int" => TypeKind::Int32,
+                    "i64" => TypeKind::Int64,
+                    "f32" => TypeKind::Float32,
+                    "f64" => TypeKind::Float64,
+                    "bool" => TypeKind::Bool,
+                    "str" => TypeKind::Str,
+                    "void" => TypeKind::Void,
+                    _ => TypeKind::Void,
+                };
+            }
+            Rule::array_type => {
+                kind = TypeKind::Array;
+                // array_type = { "[" ~ type_expr ~ "]" }
+                let inner_type = inner.into_inner().next().unwrap();
+                array_elem = Some(parse_type_kind(inner_type));
+            }
+            Rule::type_identifier => {
+                kind = TypeKind::Object;
+            }
+            Rule::optional_marker => {
+                kind = TypeKind::Optional;
+            }
+            _ => {}
+        }
+    }
+
+    (kind, array_elem)
+}
+
 fn type_kind_to_default_type(kind: TypeKind) -> Type {
     match kind {
         TypeKind::Int32 => Type::Int32(0),
@@ -225,8 +267,10 @@ fn parse_statement(pair: Pair<Rule>) -> ASTNode {
 
     match inner.as_rule() {
         Rule::let_stmt => parse_let_stmt(inner),
+        Rule::static_stmt => parse_static_stmt(inner),
         Rule::init_stmt => parse_init_stmt(inner),
         Rule::assign_stmt => parse_assign_stmt(inner),
+        Rule::assign_static_stmt => parse_assign_static_stmt(inner),
         Rule::assign_index_stmt => parse_assign_index_stmt(inner),
         Rule::assign_field_stmt => parse_assign_field_stmt(inner),
         Rule::return_stmt => parse_return_stmt(inner),
@@ -267,16 +311,25 @@ fn parse_let_stmt(pair: Pair<Rule>) -> ASTNode {
     ))
 }
 
+fn parse_static_stmt(pair: Pair<Rule>) -> ASTNode {
+    let mut inner = pair.into_inner();
+    let name = inner.next().unwrap().as_str().to_string();
+    let type_kind = parse_type_kind(inner.next().unwrap());
+    let value_expr = parse_expr(inner.next().unwrap());
+
+    ASTNode::DefineVarStatic(DefineVariableStatic::new(
+        type_kind_to_default_type(type_kind),
+        &name,
+        Rc::new(value_expr),
+    ))
+}
+
 fn parse_init_stmt(pair: Pair<Rule>) -> ASTNode {
     let mut inner = pair.into_inner();
     let name = inner.next().unwrap().as_str().to_string();
     let value_expr = parse_expr(inner.next().unwrap());
 
-    ASTNode::DefineVar(DefineVariable::new(
-        Type::Int32(0),
-        &name,
-        Rc::new(value_expr),
-    ))
+    ASTNode::DefineVar(DefineVariable::new(Type::Void, &name, Rc::new(value_expr)))
 }
 
 fn parse_assign_stmt(pair: Pair<Rule>) -> ASTNode {
@@ -285,6 +338,18 @@ fn parse_assign_stmt(pair: Pair<Rule>) -> ASTNode {
     let value_expr = parse_expr(inner.next().unwrap());
 
     ASTNode::SetVar(SetVariable::new(
+        Type::Void, // runtime type check
+        &name,
+        Rc::new(value_expr),
+    ))
+}
+
+fn parse_assign_static_stmt(pair: Pair<Rule>) -> ASTNode {
+    let mut inner = pair.into_inner();
+    let name = inner.next().unwrap().as_str().to_string();
+    let value_expr = parse_expr(inner.next().unwrap());
+
+    ASTNode::SetVarStatic(SetVariableStatic::new(
         Type::Void, // runtime type check
         &name,
         Rc::new(value_expr),
@@ -389,11 +454,7 @@ fn parse_for_init(pair: Pair<Rule>) -> ASTNode {
             let mut parts = inner.into_inner();
             let name = parts.next().unwrap().as_str().to_string();
             let value_expr = parse_expr(parts.next().unwrap());
-            ASTNode::DefineVar(DefineVariable::new(
-                Type::Int32(0),
-                &name,
-                Rc::new(value_expr),
-            ))
+            ASTNode::DefineVar(DefineVariable::new(Type::Void, &name, Rc::new(value_expr)))
         }
         Rule::assign_stmt_no_semi => {
             let mut parts = inner.into_inner();
@@ -545,19 +606,31 @@ fn parse_primary(pair: Pair<Rule>) -> ExprNode {
             parse_primary(first)
         }
         Rule::integer => {
-            let val: i32 = pair
-                .as_str()
-                .parse()
-                .unwrap_or_else(|_| pair.as_str().parse::<i64>().unwrap_or(0) as i32);
-            ExprNode::Literal(Type::Int32(val))
+            let s = pair.as_str();
+            if let Some(num) = s.strip_suffix("i64") {
+                let val: i64 = num.parse().unwrap();
+                ExprNode::Literal(Type::Int64(val))
+            } else {
+                let num = s.strip_suffix("i32").unwrap_or(s);
+                let val: i32 = num.parse().unwrap();
+                ExprNode::Literal(Type::Int32(val))
+            }
         }
         Rule::float => {
-            let val: f64 = pair.as_str().parse().unwrap();
-            ExprNode::Literal(Type::Float64(val))
+            let s = pair.as_str();
+            if let Some(num) = s.strip_suffix("f32") {
+                let val: f32 = num.parse().unwrap();
+                ExprNode::Literal(Type::Float32(val))
+            } else {
+                let num = s.strip_suffix("f64").unwrap_or(s);
+                let val: f64 = num.parse().unwrap();
+                ExprNode::Literal(Type::Float64(val))
+            }
         }
         Rule::string => ExprNode::Literal(Type::Str(parse_string_literal(pair))),
         Rule::boolean => ExprNode::Literal(Type::Bool(pair.as_str() == "true")),
         Rule::null_lit => ExprNode::Literal(Type::Null),
+        Rule::maybe_expr => ExprNode::Maybe,
         Rule::identifier => {
             let name = pair.as_str().to_string();
             ExprNode::Literal(Type::VarRef(name))

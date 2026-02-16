@@ -19,8 +19,8 @@ import_stmt = { "import" ~ string ~ ";" }
 // Literals
 // ============================================================================
 
-float       = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ }
-integer     = @{ "-"? ~ ASCII_DIGIT+ }
+float       = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+ ~ ("f32" | "f64")? }
+integer     = @{ "-"? ~ ASCII_DIGIT+ ~ ("i32" | "i64")? }
 string      = @{ "\"" ~ (escape_char | (!("\"" | "\\") ~ ANY))* ~ "\"" }
 escape_char = _{ "\\\\" | "\\\"" | "\\n" | "\\t" | "\\r" | "\\0" }
 boolean     =  { "true" | "false" }
@@ -28,8 +28,10 @@ null_lit    =  { "null" }
 
 identifier = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 
+static_identifier = { "static" ~ identifier }
+
 keyword = {
-    ("fn" | "let" | "struct" | "if" | "else" | "while" | "for" | "return" | "break" | "continue" | "true" | "false" | "null" | "put" | "putln" | "len" | "typeof" | "push" | "pop" | "note" | "import" | "i32" | "i64" | "int" | "f32" | "f64" | "bool" | "str" | "void") ~ !(ASCII_ALPHANUMERIC | "_")
+    ("fn" | "let" | "struct" | "if" | "else" | "while" | "for" | "return" | "break" | "continue" | "true" | "false" | "null" | "put" | "putln" | "len" | "typeof" | "push" | "pop" | "note" | "import" | "maybe" | "i32" | "i64" | "int" | "f32" | "f64" | "bool" | "str" | "void") ~ !(ASCII_ALPHANUMERIC | "_")
 }
 
 // ============================================================================
@@ -56,14 +58,18 @@ primary = {
   | string
   | boolean
   | null_lit
+  | maybe_expr
   | len_expr
   | typeof_expr
   | push_expr
   | pop_expr
   | array_literal
   | struct_literal
+  | static_identifier
   | identifier ~ call_args?
 }
+
+maybe_expr = { "maybe" }
 
 len_expr    = { "len" ~ primary }
 typeof_expr = { "typeof" ~ primary }
@@ -176,6 +182,8 @@ bit_not_op =  { "~" }
 
 statement = {
     let_stmt
+  | static_stmt
+  | assign_static_stmt
   | init_stmt
   | assign_index_stmt
   | assign_field_stmt
@@ -194,8 +202,10 @@ statement = {
 if_stmt = { if_expr }
 
 let_stmt            = { "let" ~ identifier ~ ":" ~ type_expr ~ "=" ~ expr ~ ";" }
+static_stmt         = { "static" ~ identifier ~ ":" ~ type_expr ~ "=" ~ expr ~ ";" }
 init_stmt           = { identifier ~ ":=" ~ expr ~ ";" }
 assign_stmt         = { identifier ~ "=" ~ expr ~ ";" }
+assign_static_stmt  = { "static" ~ identifier ~ "=" ~ expr ~ ";" }
 assign_index_stmt   = { identifier ~ "[" ~ expr ~ "]" ~ "=" ~ expr ~ ";" }
 assign_field_stmt   = { identifier ~ "." ~ identifier ~ "=" ~ expr ~ ";" }
 return_stmt         = { "return" ~ expr? ~ ";" }

@@ -5,6 +5,8 @@ use crate::types::{Type, TypeKind};
 pub struct FunctionParam {
     pub name: String,
     pub param_type: TypeKind,
+    /// For array params, the element type (e.g. `[i32]` → Some(Int32)).
+    pub array_element_type: Option<TypeKind>,
 }
 
 //the function call node provides the context
@@ -32,7 +34,11 @@ impl Function {
         ctx: &mut Context,
         arg_values: Vec<(String, Type)>,
     ) -> Result<Type, String> {
-        let mut local_ctx = Context::new(ctx.functions.clone(), ctx.structs.clone()); // ez gecire nem jo
+        let mut local_ctx = Context::new(
+            ctx.functions.clone(),
+            ctx.structs.clone(),
+            ctx.static_vars.clone(),
+        );
 
         for (name, val) in arg_values {
             local_ctx.add_variable(&name, val)?;
@@ -49,7 +55,11 @@ impl Function {
 
 impl Executable for Function {
     fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
-        let mut local_ctx = Context::new(ctx.functions.clone(), ctx.structs.clone());
+        let mut local_ctx = Context::new(
+            ctx.functions.clone(),
+            ctx.structs.clone(),
+            ctx.static_vars.clone(),
+        );
 
         for i in self.args.iter() {
             let res = local_ctx.add_variable(&i.name, ctx.get_variable_reference(&i.name));
@@ -84,6 +94,7 @@ mod tests {
     use super::*;
     use crate::ast::ExprNode;
     use rustc_hash::FxHashMap;
+    use std::cell::RefCell;
     use std::rc::Rc;
 
     #[test]
@@ -127,10 +138,12 @@ mod tests {
         func.args.push(FunctionParam {
             name: String::from("x"),
             param_type: TypeKind::Int32,
+            array_element_type: None,
         });
         func.args.push(FunctionParam {
             name: String::from("y"),
             param_type: TypeKind::Int32,
+            array_element_type: None,
         });
 
         ctx.add_variable("x", Type::Int32(2)).unwrap();
@@ -168,10 +181,12 @@ mod tests {
         func.args.push(FunctionParam {
             name: String::from("x"),
             param_type: TypeKind::Int32,
+            array_element_type: None,
         });
         func.args.push(FunctionParam {
             name: String::from("y"),
             param_type: TypeKind::Int32,
+            array_element_type: None,
         });
 
         let arg_values = vec![
@@ -208,7 +223,11 @@ mod tests {
         functions.insert(String::from("get_value"), vec![get_value]);
 
         let functions_rc = Rc::new(functions);
-        let mut ctx = Context::new(functions_rc, Rc::new(FxHashMap::default()));
+        let mut ctx = Context::new(
+            functions_rc,
+            Rc::new(FxHashMap::default()),
+            Rc::new(RefCell::new(FxHashMap::default())),
+        );
 
         let call = ExprNode::FunctionCall {
             name: String::from("get_value"),
@@ -287,12 +306,17 @@ mod tests {
         factorial.args.push(FunctionParam {
             name: String::from("n"),
             param_type: TypeKind::Int32,
+            array_element_type: None,
         });
 
         functions.insert(String::from("factorial"), vec![factorial]);
 
         let functions_rc = Rc::new(functions);
-        let mut ctx = Context::new(functions_rc, Rc::new(FxHashMap::default()));
+        let mut ctx = Context::new(
+            functions_rc,
+            Rc::new(FxHashMap::default()),
+            Rc::new(RefCell::new(FxHashMap::default())),
+        );
 
         // Call factorial(5)
         let call = ExprNode::FunctionCall {
@@ -332,6 +356,7 @@ mod tests {
         ol_str.args.push(FunctionParam {
             name: String::from("s"),
             param_type: TypeKind::Str,
+            array_element_type: None,
         });
 
         // Second overload: ol(s: i32)
@@ -344,12 +369,17 @@ mod tests {
         ol_int.args.push(FunctionParam {
             name: String::from("s"),
             param_type: TypeKind::Int32,
+            array_element_type: None,
         });
 
         functions.insert(String::from("ol"), vec![ol_str, ol_int]);
 
         let functions_rc = Rc::new(functions);
-        let mut ctx = Context::new(functions_rc, Rc::new(FxHashMap::default()));
+        let mut ctx = Context::new(
+            functions_rc,
+            Rc::new(FxHashMap::default()),
+            Rc::new(RefCell::new(FxHashMap::default())),
+        );
 
         // Test ol("hello") -> should call first overload (Str)
         let call_str = ExprNode::FunctionCall {
@@ -417,12 +447,17 @@ mod tests {
         func.args.push(FunctionParam {
             name: String::from("x"),
             param_type: TypeKind::Int32,
+            array_element_type: None,
         });
 
         functions.insert(String::from("early_return_test"), vec![func]);
 
         let functions_rc = Rc::new(functions);
-        let mut ctx = Context::new(functions_rc, Rc::new(FxHashMap::default()));
+        let mut ctx = Context::new(
+            functions_rc,
+            Rc::new(FxHashMap::default()),
+            Rc::new(RefCell::new(FxHashMap::default())),
+        );
 
         let call = ExprNode::FunctionCall {
             name: String::from("early_return_test"),

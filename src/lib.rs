@@ -5,6 +5,7 @@ pub mod ast;
 pub mod emit;
 pub mod functions;
 pub mod parser;
+pub mod templates;
 pub mod types;
 
 pub use ast::{ASTNode, Context, DefineVariable, Executable, ExprNode, SetVariable, Symbol};

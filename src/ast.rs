@@ -1,9 +1,10 @@
 use rand::Rng;
 use rustc_hash::FxHashMap;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::Castable;
-use crate::functions::Function;
+use crate::functions::{Function, FunctionParam};
 use crate::types::{StructDef, Type, TypeKind};
 
 pub trait Executable {
@@ -14,6 +15,7 @@ pub struct Context {
     pub vars: FxHashMap<String, Type>,
     pub functions: Rc<FxHashMap<String, Vec<Function>>>,
     pub structs: Rc<FxHashMap<String, StructDef>>,
+    pub static_vars: Rc<RefCell<FxHashMap<String, Type>>>, // essentially global vars
     pub return_value: Option<Type>,
 }
 
@@ -21,11 +23,13 @@ impl Context {
     pub fn new(
         fns: Rc<FxHashMap<String, Vec<Function>>>,
         structs: Rc<FxHashMap<String, StructDef>>,
+        static_vars: Rc<RefCell<FxHashMap<String, Type>>>,
     ) -> Self {
         Self {
             vars: FxHashMap::default(),
             functions: fns,
             structs,
+            static_vars,
             return_value: None,
         }
     }
@@ -36,6 +40,7 @@ impl Context {
             vars: FxHashMap::default(),
             functions: Rc::new(FxHashMap::default()),
             structs: Rc::new(FxHashMap::default()),
+            static_vars: Rc::new(RefCell::new(FxHashMap::default())),
             return_value: None,
         }
     }
@@ -51,22 +56,27 @@ impl Context {
                         && f.args
                             .iter()
                             .zip(arg_values.iter())
-                            .all(|(param, arg_val)| self.type_matches(param.param_type, arg_val))
+                            .all(|(param, arg_val)| self.type_matches(param, arg_val))
                 })
                 .cloned()
         })
     }
 
     /// Check if a parameter type matches an argument value's type
-    fn type_matches(&self, param_type: TypeKind, arg_val: &Type) -> bool {
-        match (param_type, arg_val) {
+    fn type_matches(&self, param: &FunctionParam, arg_val: &Type) -> bool {
+        match (param.param_type, arg_val) {
             (TypeKind::Array, Type::Array(elems)) => {
-                // All elements must have the same type
                 if elems.is_empty() {
-                    return true; // Empty arrays match any array type
+                    return true;
                 }
-                let elem_kind = elems[0].get_kind();
-                elems.iter().all(|e| e.get_kind() == elem_kind)
+                // If param specifies an element type, check it matches
+                if let Some(expected_elem) = param.array_element_type {
+                    elems[0].get_kind() == expected_elem
+                } else {
+                    // No element type specified — just check all elements are same type
+                    let elem_kind = elems[0].get_kind();
+                    elems.iter().all(|e| e.get_kind() == elem_kind)
+                }
             }
             (param_type, arg_val) => param_type == arg_val.get_kind(),
         }
@@ -90,11 +100,30 @@ impl Context {
         Ok(())
     }
 
-    pub fn get_variable_reference(&mut self, name: &str) -> Type {
-        self.vars.get(name).unwrap().clone()
+    pub fn add_static_variable(&mut self, name: &str, val: Type) -> Result<(), String> {
+        self.static_vars
+            .borrow_mut()
+            .insert(String::from(name), val);
+
+        Ok(())
     }
 
-    // works for inserting vars aswell
+    pub fn has_static_variable(&self, name: &str) -> bool {
+        self.static_vars.borrow().contains_key(name)
+    }
+
+    pub fn get_variable_reference(&mut self, name: &str) -> Type {
+        match self.vars.get(name) {
+            Some(val) => {
+                return val.clone();
+            }
+            None => {}
+        }
+
+        self.static_vars.borrow().get(name).unwrap().clone()
+    }
+
+    /// works for inserting vars aswell
     pub fn set_variable(&mut self, name: &str, new_val: Type) -> Result<(), String> {
         match self.vars.get(name) {
             Some(val) => {
@@ -117,6 +146,29 @@ impl Context {
         return Ok(());
     }
 
+    pub fn set_variable_static(&mut self, name: &str, new_val: Type) -> Result<(), String> {
+        let mut statics = self.static_vars.borrow_mut();
+        match statics.get(name) {
+            Some(val) => {
+                if val.get_kind() != new_val.get_kind() {
+                    return Err(format!(
+                        "Cannot change the type of variable {:?} from {:?} to {:?} during assignment",
+                        name,
+                        val.get_kind(),
+                        new_val.get_kind()
+                    ));
+                }
+            }
+            None => {}
+        }
+
+        statics
+            .entry(String::from(name))
+            .and_modify(|v| *v = new_val);
+
+        return Ok(());
+    }
+
     pub fn _debug_print(&self) {
         for (name, value) in &self.vars {
             println!("  {} = {:?}", name, value);
@@ -128,7 +180,9 @@ impl Context {
 pub enum ASTNode {
     Expr(ExprNode),
     DefineVar(DefineVariable),
+    DefineVarStatic(DefineVariableStatic),
     SetVar(SetVariable),
+    SetVarStatic(SetVariableStatic),
     // (assign_field user name "Bob")
     SetField {
         object_name: String,
@@ -175,7 +229,9 @@ impl Executable for DefineVariable {
     fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
         let expr_res = self.value.execute_core(ctx)?;
 
-        if !self.type_matches(&expr_res) {
+        // skip type check if var_type is Void (inferred from expression, e.g. := syntax)
+        if self.var_type.get_kind() != crate::types::TypeKind::Void && !self.type_matches(&expr_res)
+        {
             return Err(format!(
                 "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
                 self.name, self.var_type, expr_res
@@ -184,6 +240,52 @@ impl Executable for DefineVariable {
 
         let result = expr_res.clone(); // because of let x := (y := 3) + 2;
         ctx.add_variable(&self.name, expr_res)?;
+
+        Ok(result)
+    }
+}
+
+#[derive(Clone)]
+pub struct DefineVariableStatic {
+    pub var_type: Type,
+    pub name: String,
+    pub value: Rc<ExprNode>,
+}
+
+impl DefineVariableStatic {
+    pub fn new(vtype: Type, n: &str, val: Rc<ExprNode>) -> Self {
+        DefineVariableStatic {
+            var_type: vtype,
+            name: String::from(n),
+            value: val,
+        }
+    }
+
+    fn type_matches(&self, value: &Type) -> bool {
+        self.var_type.get_kind() == value.get_kind()
+    }
+}
+
+impl Executable for DefineVariableStatic {
+    fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
+        // Static variables are only initialized once; skip if already defined
+        if ctx.has_static_variable(&self.name) {
+            return Ok(ctx.get_variable_reference(&self.name));
+        }
+
+        let expr_res = self.value.execute_core(ctx)?;
+
+        // skip type check if var_type is Void (inferred from expression, e.g. := syntax)
+        if self.var_type.get_kind() != crate::types::TypeKind::Void && !self.type_matches(&expr_res)
+        {
+            return Err(format!(
+                "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                self.name, self.var_type, expr_res
+            ));
+        }
+
+        let result = expr_res.clone();
+        ctx.add_static_variable(&self.name, expr_res)?;
 
         Ok(result)
     }
@@ -212,20 +314,120 @@ impl SetVariable {
 
 impl Executable for SetVariable {
     fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
-        let expr_res = self.value.execute_core(ctx)?;
+        let mut expr_res = self.value.execute_core(ctx)?;
 
         // skip compile-time type check if var_type is Void (runtime type check in Context::set_variable)
         // the parser only indentifies the pattern and does not know at this point what type given identifier is so it gives it type void
         if self.var_type.get_kind() != crate::types::TypeKind::Void && !self.type_matches(&expr_res)
         {
-            return Err(format!(
-                "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
-                self.name, self.var_type, expr_res
-            ));
+            if let Ok(downcasted) = expr_res.clone().cast_down() {
+                if self.type_matches(&downcasted) {
+                    expr_res = downcasted;
+                } else if let Ok(upcasted) = expr_res.clone().cast_up() {
+                    if self.type_matches(&upcasted) {
+                        expr_res = upcasted;
+                    } else {
+                        return Err(format!(
+                            "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                            self.name, self.var_type, expr_res
+                        ));
+                    }
+                } else {
+                    return Err(format!(
+                        "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                        self.name, self.var_type, expr_res
+                    ));
+                }
+            } else if let Ok(upcasted) = expr_res.clone().cast_up() {
+                if self.type_matches(&upcasted) {
+                    expr_res = upcasted;
+                } else {
+                    return Err(format!(
+                        "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                        self.name, self.var_type, expr_res
+                    ));
+                }
+            } else {
+                return Err(format!(
+                    "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                    self.name, self.var_type, expr_res
+                ));
+            }
         }
 
         let result = expr_res.clone(); // because of let x := (y := 3) + 2;
         ctx.set_variable(&self.name, expr_res)?;
+
+        Ok(result)
+    }
+}
+
+#[derive(Clone)]
+pub struct SetVariableStatic {
+    pub var_type: Type,
+    pub name: String,
+    pub value: Rc<ExprNode>,
+}
+
+impl SetVariableStatic {
+    pub fn new(vtype: Type, n: &str, val: Rc<ExprNode>) -> Self {
+        SetVariableStatic {
+            var_type: vtype,
+            name: String::from(n),
+            value: val,
+        }
+    }
+
+    fn type_matches(&self, value: &Type) -> bool {
+        self.var_type.get_kind() == value.get_kind()
+    }
+}
+
+impl Executable for SetVariableStatic {
+    fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
+        let mut expr_res = self.value.execute_core(ctx)?;
+
+        // skip compile-time type check if var_type is Void (runtime type check in Context::set_variable)
+        // the parser only indentifies the pattern and does not know at this point what type given identifier is so it gives it type void
+        if self.var_type.get_kind() != crate::types::TypeKind::Void && !self.type_matches(&expr_res)
+        {
+            if let Ok(downcasted) = expr_res.clone().cast_down() {
+                if self.type_matches(&downcasted) {
+                    expr_res = downcasted;
+                } else if let Ok(upcasted) = expr_res.clone().cast_up() {
+                    if self.type_matches(&upcasted) {
+                        expr_res = upcasted;
+                    } else {
+                        return Err(format!(
+                            "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                            self.name, self.var_type, expr_res
+                        ));
+                    }
+                } else {
+                    return Err(format!(
+                        "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                        self.name, self.var_type, expr_res
+                    ));
+                }
+            } else if let Ok(upcasted) = expr_res.clone().cast_up() {
+                if self.type_matches(&upcasted) {
+                    expr_res = upcasted;
+                } else {
+                    return Err(format!(
+                        "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                        self.name, self.var_type, expr_res
+                    ));
+                }
+            } else {
+                return Err(format!(
+                    "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                    self.name, self.var_type, expr_res
+                ));
+            }
+        }
+
+        let result = expr_res.clone(); // because of let x := (y := 3) + 2;
+        ctx.set_variable_static(&self.name, expr_res)?;
 
         Ok(result)
     }
@@ -338,7 +540,9 @@ impl Executable for ASTNode {
         match self {
             ASTNode::Expr(e) => e.execute_core(ctx),
             ASTNode::DefineVar(d) => d.execute(ctx),
+            ASTNode::DefineVarStatic(d) => d.execute(ctx),
             ASTNode::SetVar(s) => s.execute(ctx),
+            ASTNode::SetVarStatic(s) => s.execute(ctx),
             ASTNode::Print(e) => {
                 let res = e.execute_core(ctx);
 
@@ -825,7 +1029,11 @@ impl ExprNode {
                     )
                 })?;
 
-                let mut local_ctx = Context::new(ctx.functions.clone(), ctx.structs.clone());
+                let mut local_ctx = Context::new(
+                    ctx.functions.clone(),
+                    ctx.structs.clone(),
+                    ctx.static_vars.clone(),
+                );
                 for (param, val) in func.args.iter().zip(arg_values.into_iter()) {
                     local_ctx.add_variable(&param.name, val)?;
                 }
@@ -1316,7 +1524,11 @@ mod tests {
         );
 
         let functions: FxHashMap<String, Vec<Function>> = FxHashMap::default();
-        let ctx = &mut Context::new(Rc::new(functions), Rc::new(structs));
+        let ctx = &mut Context::new(
+            Rc::new(functions),
+            Rc::new(structs),
+            Rc::new(RefCell::new(FxHashMap::default())),
+        );
 
         // (struct User (id 1) (name "Alice"))
         let struct_literal = ExprNode::StructLiteral {
@@ -1357,7 +1569,11 @@ mod tests {
         );
 
         let functions: FxHashMap<String, Vec<Function>> = FxHashMap::default();
-        let ctx = &mut Context::new(Rc::new(functions), Rc::new(structs));
+        let ctx = &mut Context::new(
+            Rc::new(functions),
+            Rc::new(structs),
+            Rc::new(RefCell::new(FxHashMap::default())),
+        );
 
         // Create user and store in variable
         let struct_literal = ExprNode::StructLiteral {
@@ -1413,7 +1629,11 @@ mod tests {
         );
 
         let functions: FxHashMap<String, Vec<Function>> = FxHashMap::default();
-        let ctx = &mut Context::new(Rc::new(functions), Rc::new(structs));
+        let ctx = &mut Context::new(
+            Rc::new(functions),
+            Rc::new(structs),
+            Rc::new(RefCell::new(FxHashMap::default())),
+        );
 
         // Create user
         let struct_literal = ExprNode::StructLiteral {

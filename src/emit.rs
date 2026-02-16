@@ -179,7 +179,9 @@ impl Emit for ASTNode {
         match self {
             ASTNode::Expr(e) => e.emit(),
             ASTNode::DefineVar(def) => def.emit(),
+            ASTNode::DefineVarStatic(..) => String::from("this shouldnt be here"),
             ASTNode::SetVar(set) => set.emit(),
+            ASTNode::SetVarStatic(..) => String::from("not implemented yet"),
             ASTNode::SetField {
                 object_name,
                 field_name,
