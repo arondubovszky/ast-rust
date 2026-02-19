@@ -11,6 +11,10 @@ pub trait Executable {
     fn execute(&self, ctx: &mut Context) -> Result<Type, String>;
 }
 
+// -----------------------------------------------------------------------------
+// Context
+// -----------------------------------------------------------------------------
+
 pub struct Context {
     pub vars: FxHashMap<String, Type>,
     pub functions: Rc<FxHashMap<String, Vec<Function>>>,
@@ -176,314 +180,9 @@ impl Context {
     }
 }
 
-#[derive(Clone)]
-pub enum ASTNode {
-    Expr(ExprNode),
-    DefineVar(DefineVariable),
-    DefineVarStatic(DefineVariableStatic),
-    SetVar(SetVariable),
-    SetVarStatic(SetVariableStatic),
-    // (assign_field user name "Bob")
-    SetField {
-        object_name: String,
-        field_name: String,
-        value: Rc<ExprNode>,
-    },
-    // arr[0] = 5;
-    SetIndex {
-        array_name: String,
-        index: Rc<ExprNode>,
-        value: Rc<ExprNode>,
-    },
-    Print(ExprNode),
-    Println(ExprNode),
-    Note {
-        note: String,
-        subtree: Rc<ASTNode>,
-    },
-    Return(ExprNode),
-}
-
-#[derive(Clone)]
-pub struct DefineVariable {
-    pub var_type: Type,
-    pub name: String,
-    pub value: Rc<ExprNode>,
-}
-
-impl DefineVariable {
-    pub fn new(vtype: Type, n: &str, val: Rc<ExprNode>) -> Self {
-        DefineVariable {
-            var_type: vtype,
-            name: String::from(n),
-            value: val,
-        }
-    }
-
-    fn type_matches(&self, value: &Type) -> bool {
-        self.var_type.get_kind() == value.get_kind()
-    }
-}
-
-impl Executable for DefineVariable {
-    fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
-        let expr_res = self.value.execute_core(ctx)?;
-
-        // skip type check if var_type is Void (inferred from expression, e.g. := syntax)
-        if self.var_type.get_kind() != crate::types::TypeKind::Void && !self.type_matches(&expr_res)
-        {
-            return Err(format!(
-                "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
-                self.name, self.var_type, expr_res
-            ));
-        }
-
-        let result = expr_res.clone(); // because of let x := (y := 3) + 2;
-        ctx.add_variable(&self.name, expr_res)?;
-
-        Ok(result)
-    }
-}
-
-#[derive(Clone)]
-pub struct DefineVariableStatic {
-    pub var_type: Type,
-    pub name: String,
-    pub value: Rc<ExprNode>,
-}
-
-impl DefineVariableStatic {
-    pub fn new(vtype: Type, n: &str, val: Rc<ExprNode>) -> Self {
-        DefineVariableStatic {
-            var_type: vtype,
-            name: String::from(n),
-            value: val,
-        }
-    }
-
-    fn type_matches(&self, value: &Type) -> bool {
-        self.var_type.get_kind() == value.get_kind()
-    }
-}
-
-impl Executable for DefineVariableStatic {
-    fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
-        // Static variables are only initialized once; skip if already defined
-        if ctx.has_static_variable(&self.name) {
-            return Ok(ctx.get_variable_reference(&self.name));
-        }
-
-        let expr_res = self.value.execute_core(ctx)?;
-
-        // skip type check if var_type is Void (inferred from expression, e.g. := syntax)
-        if self.var_type.get_kind() != crate::types::TypeKind::Void && !self.type_matches(&expr_res)
-        {
-            return Err(format!(
-                "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
-                self.name, self.var_type, expr_res
-            ));
-        }
-
-        let result = expr_res.clone();
-        ctx.add_static_variable(&self.name, expr_res)?;
-
-        Ok(result)
-    }
-}
-
-#[derive(Clone)]
-pub struct SetVariable {
-    pub var_type: Type,
-    pub name: String,
-    pub value: Rc<ExprNode>,
-}
-
-impl SetVariable {
-    pub fn new(vtype: Type, n: &str, val: Rc<ExprNode>) -> Self {
-        SetVariable {
-            var_type: vtype,
-            name: String::from(n),
-            value: val,
-        }
-    }
-
-    fn type_matches(&self, value: &Type) -> bool {
-        self.var_type.get_kind() == value.get_kind()
-    }
-}
-
-impl Executable for SetVariable {
-    fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
-        let mut expr_res = self.value.execute_core(ctx)?;
-
-        // skip compile-time type check if var_type is Void (runtime type check in Context::set_variable)
-        // the parser only indentifies the pattern and does not know at this point what type given identifier is so it gives it type void
-        if self.var_type.get_kind() != crate::types::TypeKind::Void && !self.type_matches(&expr_res)
-        {
-            if let Ok(downcasted) = expr_res.clone().cast_down() {
-                if self.type_matches(&downcasted) {
-                    expr_res = downcasted;
-                } else if let Ok(upcasted) = expr_res.clone().cast_up() {
-                    if self.type_matches(&upcasted) {
-                        expr_res = upcasted;
-                    } else {
-                        return Err(format!(
-                            "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
-                            self.name, self.var_type, expr_res
-                        ));
-                    }
-                } else {
-                    return Err(format!(
-                        "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
-                        self.name, self.var_type, expr_res
-                    ));
-                }
-            } else if let Ok(upcasted) = expr_res.clone().cast_up() {
-                if self.type_matches(&upcasted) {
-                    expr_res = upcasted;
-                } else {
-                    return Err(format!(
-                        "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
-                        self.name, self.var_type, expr_res
-                    ));
-                }
-            } else {
-                return Err(format!(
-                    "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
-                    self.name, self.var_type, expr_res
-                ));
-            }
-        }
-
-        let result = expr_res.clone(); // because of let x := (y := 3) + 2;
-        ctx.set_variable(&self.name, expr_res)?;
-
-        Ok(result)
-    }
-}
-
-#[derive(Clone)]
-pub struct SetVariableStatic {
-    pub var_type: Type,
-    pub name: String,
-    pub value: Rc<ExprNode>,
-}
-
-impl SetVariableStatic {
-    pub fn new(vtype: Type, n: &str, val: Rc<ExprNode>) -> Self {
-        SetVariableStatic {
-            var_type: vtype,
-            name: String::from(n),
-            value: val,
-        }
-    }
-
-    fn type_matches(&self, value: &Type) -> bool {
-        self.var_type.get_kind() == value.get_kind()
-    }
-}
-
-impl Executable for SetVariableStatic {
-    fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
-        let mut expr_res = self.value.execute_core(ctx)?;
-
-        // skip compile-time type check if var_type is Void (runtime type check in Context::set_variable)
-        // the parser only indentifies the pattern and does not know at this point what type given identifier is so it gives it type void
-        if self.var_type.get_kind() != crate::types::TypeKind::Void && !self.type_matches(&expr_res)
-        {
-            if let Ok(downcasted) = expr_res.clone().cast_down() {
-                if self.type_matches(&downcasted) {
-                    expr_res = downcasted;
-                } else if let Ok(upcasted) = expr_res.clone().cast_up() {
-                    if self.type_matches(&upcasted) {
-                        expr_res = upcasted;
-                    } else {
-                        return Err(format!(
-                            "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
-                            self.name, self.var_type, expr_res
-                        ));
-                    }
-                } else {
-                    return Err(format!(
-                        "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
-                        self.name, self.var_type, expr_res
-                    ));
-                }
-            } else if let Ok(upcasted) = expr_res.clone().cast_up() {
-                if self.type_matches(&upcasted) {
-                    expr_res = upcasted;
-                } else {
-                    return Err(format!(
-                        "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
-                        self.name, self.var_type, expr_res
-                    ));
-                }
-            } else {
-                return Err(format!(
-                    "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
-                    self.name, self.var_type, expr_res
-                ));
-            }
-        }
-
-        let result = expr_res.clone(); // because of let x := (y := 3) + 2;
-        ctx.set_variable_static(&self.name, expr_res)?;
-
-        Ok(result)
-    }
-}
-
-#[derive(Clone)]
-pub enum ExprNode {
-    BinaryOp {
-        op: Symbol,
-        left: Rc<ExprNode>,
-        right: Option<Rc<ExprNode>>,
-    },
-    Literal(Type),
-    ArrayLiteral(Vec<Rc<ExprNode>>),
-    Index {
-        array: Rc<ExprNode>,
-        index: Rc<ExprNode>,
-    },
-    IfElseNode {
-        statement: Rc<ExprNode>,
-        then_branch: Rc<Vec<ASTNode>>,
-        else_branch: Option<Rc<Vec<ASTNode>>>,
-    },
-    LoopNode {
-        statement: Rc<ExprNode>,
-        body: Rc<Vec<ASTNode>>,
-    },
-    // [length; fill_value]
-    ArraySized {
-        length: Rc<ExprNode>,
-        fill: Rc<ExprNode>,
-    },
-    // function definitions will be handled during parsing
-    FunctionCall {
-        name: String,
-        args: Vec<Rc<ExprNode>>,
-    },
-    // (struct User (id 1) (name "Alice"))
-    StructLiteral {
-        struct_name: String,
-        fields: Vec<(String, Rc<ExprNode>)>, // (field_name, value_expr)
-    },
-    // (field user name)
-    Field {
-        object: Rc<ExprNode>,
-        field_name: String,
-    },
-    Len(Rc<ExprNode>),
-    TypeOf(Rc<ExprNode>),
-    Push {
-        array: Rc<ExprNode>,
-        value: Rc<ExprNode>,
-    },
-    Pop(Rc<ExprNode>),
-    Maybe,
-}
+// -----------------------------------------------------------------------------
+// Symbol
+// -----------------------------------------------------------------------------
 
 #[warn(unused)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -535,94 +234,60 @@ pub enum Symbol {
     Call,  // () operation
 }
 
-impl Executable for ASTNode {
-    fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
-        match self {
-            ASTNode::Expr(e) => e.execute_core(ctx),
-            ASTNode::DefineVar(d) => d.execute(ctx),
-            ASTNode::DefineVarStatic(d) => d.execute(ctx),
-            ASTNode::SetVar(s) => s.execute(ctx),
-            ASTNode::SetVarStatic(s) => s.execute(ctx),
-            ASTNode::Print(e) => {
-                let res = e.execute_core(ctx);
+// -----------------------------------------------------------------------------
+// ExprNode
+// -----------------------------------------------------------------------------
 
-                match res {
-                    Ok(x) => {
-                        match &x {
-                            Type::Bool(b) => print!("{}", b),
-                            Type::Float32(f) => print!("{}", f),
-                            Type::Float64(f) => print!("{}", f),
-                            Type::Int32(i) => print!("{}", i),
-                            Type::Int64(i) => print!("{}", i),
-                            Type::Str(s) => print!("{}", s),
-                            _ => print!("{:?}", x),
-                        }
-                        return Ok(x);
-                    }
-                    Err(e) => Err(format!("error: {:?}", e)),
-                }
-            }
-            ASTNode::Println(e) => {
-                let res = e.execute_core(ctx);
-
-                match res {
-                    Ok(x) => {
-                        match &x {
-                            Type::Bool(b) => println!("{}", b),
-                            Type::Float32(f) => println!("{}", f),
-                            Type::Float64(f) => println!("{}", f),
-                            Type::Int32(i) => println!("{}", i),
-                            Type::Int64(i) => println!("{}", i),
-                            Type::Str(s) => println!("{}", s),
-                            _ => print!("{:?}", x),
-                        }
-                        return Ok(x);
-                    }
-                    Err(e) => Err(format!("error: {:?}", e)),
-                }
-            }
-            ASTNode::Return(e) => {
-                let val = e.execute_core(ctx)?;
-                ctx.set_return(val.clone());
-                Ok(val)
-            }
-            ASTNode::SetField {
-                object_name,
-                field_name,
-                value,
-            } => {
-                let new_val = value.execute_core(ctx)?;
-
-                // Get the object from context, modify it, put it back
-                let mut obj = ctx.get_variable_reference(object_name);
-                obj.set_field(field_name, new_val.clone())?;
-                ctx.set_variable(object_name, obj)?;
-
-                Ok(new_val)
-            }
-            ASTNode::SetIndex {
-                array_name,
-                index,
-                value,
-            } => {
-                let idx_val = index.execute_core(ctx)?;
-                let new_val = value.execute_core(ctx)?;
-
-                let idx = match idx_val {
-                    Type::Int32(i) => i as usize,
-                    Type::Int64(i) => i as usize,
-                    _ => return Err(format!("array index must be an integer, got {:?}", idx_val)),
-                };
-
-                let mut arr = ctx.get_variable_reference(array_name);
-                arr.set_index(idx, new_val.clone())?;
-                ctx.set_variable(array_name, arr)?;
-
-                Ok(new_val)
-            }
-            ASTNode::Note { subtree, .. } => subtree.execute(ctx),
-        }
-    }
+#[derive(Clone)]
+pub enum ExprNode {
+    BinaryOp {
+        op: Symbol,
+        left: Rc<ExprNode>,
+        right: Option<Rc<ExprNode>>,
+    },
+    Literal(Type),
+    ArrayLiteral(Vec<Rc<ExprNode>>),
+    Index {
+        array: Rc<ExprNode>,
+        index: Rc<ExprNode>,
+    },
+    IfElseNode {
+        statement: Rc<ExprNode>,
+        then_branch: Rc<Vec<ASTNode>>,
+        else_branch: Option<Rc<Vec<ASTNode>>>,
+    },
+    LoopNode {
+        statement: Rc<ExprNode>,
+        body: Rc<Vec<ASTNode>>,
+    },
+    // [length; fill_value]
+    ArraySized {
+        length: Rc<ExprNode>,
+        fill: Rc<ExprNode>,
+    },
+    // function definitions will be handled during parsing
+    FunctionCall {
+        name: String,
+        args: Vec<Rc<ExprNode>>,
+    },
+    // (struct User (id 1) (name "Alice"))
+    StructLiteral {
+        struct_name: String,
+        fields: Vec<(String, Rc<ExprNode>)>, // (field_name, value_expr)
+    },
+    // (field user name)
+    Field {
+        object: Rc<ExprNode>,
+        field_name: String,
+    },
+    Len(Rc<ExprNode>),
+    TypeOf(Rc<ExprNode>),
+    Push {
+        array: Rc<ExprNode>,
+        value: Rc<ExprNode>,
+    },
+    Pop(Rc<ExprNode>),
+    Maybe,
 }
 
 impl ExprNode {
@@ -1134,6 +799,365 @@ impl ExprNode {
         }
     }
 }
+
+// -----------------------------------------------------------------------------
+// ASTNode
+// -----------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub enum ASTNode {
+    Expr(ExprNode),
+    DefineVar(DefineVariable),
+    DefineVarStatic(DefineVariableStatic),
+    SetVar(SetVariable),
+    SetVarStatic(SetVariableStatic),
+    // (assign_field user name "Bob")
+    SetField {
+        object_name: String,
+        field_name: String,
+        value: Rc<ExprNode>,
+    },
+    // arr[0] = 5;
+    SetIndex {
+        array_name: String,
+        index: Rc<ExprNode>,
+        value: Rc<ExprNode>,
+    },
+    Print(ExprNode),
+    Println(ExprNode),
+    Note {
+        note: String,
+        subtree: Rc<ASTNode>,
+    },
+    Return(ExprNode),
+}
+
+impl Executable for ASTNode {
+    fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
+        match self {
+            ASTNode::Expr(e) => e.execute_core(ctx),
+            ASTNode::DefineVar(d) => d.execute(ctx),
+            ASTNode::DefineVarStatic(d) => d.execute(ctx),
+            ASTNode::SetVar(s) => s.execute(ctx),
+            ASTNode::SetVarStatic(s) => s.execute(ctx),
+            ASTNode::Print(e) => {
+                let res = e.execute_core(ctx);
+
+                match res {
+                    Ok(x) => {
+                        match &x {
+                            Type::Bool(b) => print!("{}", b),
+                            Type::Float32(f) => print!("{}", f),
+                            Type::Float64(f) => print!("{}", f),
+                            Type::Int32(i) => print!("{}", i),
+                            Type::Int64(i) => print!("{}", i),
+                            Type::Str(s) => print!("{}", s),
+                            _ => print!("{:?}", x),
+                        }
+                        return Ok(x);
+                    }
+                    Err(e) => Err(format!("error: {:?}", e)),
+                }
+            }
+            ASTNode::Println(e) => {
+                let res = e.execute_core(ctx);
+
+                match res {
+                    Ok(x) => {
+                        match &x {
+                            Type::Bool(b) => println!("{}", b),
+                            Type::Float32(f) => println!("{}", f),
+                            Type::Float64(f) => println!("{}", f),
+                            Type::Int32(i) => println!("{}", i),
+                            Type::Int64(i) => println!("{}", i),
+                            Type::Str(s) => println!("{}", s),
+                            _ => print!("{:?}", x),
+                        }
+                        return Ok(x);
+                    }
+                    Err(e) => Err(format!("error: {:?}", e)),
+                }
+            }
+            ASTNode::Return(e) => {
+                let val = e.execute_core(ctx)?;
+                ctx.set_return(val.clone());
+                Ok(val)
+            }
+            ASTNode::SetField {
+                object_name,
+                field_name,
+                value,
+            } => {
+                let new_val = value.execute_core(ctx)?;
+
+                // Get the object from context, modify it, put it back
+                let mut obj = ctx.get_variable_reference(object_name);
+                obj.set_field(field_name, new_val.clone())?;
+                ctx.set_variable(object_name, obj)?;
+
+                Ok(new_val)
+            }
+            ASTNode::SetIndex {
+                array_name,
+                index,
+                value,
+            } => {
+                let idx_val = index.execute_core(ctx)?;
+                let new_val = value.execute_core(ctx)?;
+
+                let idx = match idx_val {
+                    Type::Int32(i) => i as usize,
+                    Type::Int64(i) => i as usize,
+                    _ => return Err(format!("array index must be an integer, got {:?}", idx_val)),
+                };
+
+                let mut arr = ctx.get_variable_reference(array_name);
+                arr.set_index(idx, new_val.clone())?;
+                ctx.set_variable(array_name, arr)?;
+
+                Ok(new_val)
+            }
+            ASTNode::Note { subtree, .. } => subtree.execute(ctx),
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Variable helpers
+// -----------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct DefineVariable {
+    pub var_type: Type,
+    pub name: String,
+    pub value: Rc<ExprNode>,
+}
+
+impl DefineVariable {
+    pub fn new(vtype: Type, n: &str, val: Rc<ExprNode>) -> Self {
+        DefineVariable {
+            var_type: vtype,
+            name: String::from(n),
+            value: val,
+        }
+    }
+
+    fn type_matches(&self, value: &Type) -> bool {
+        self.var_type.get_kind() == value.get_kind()
+    }
+}
+
+impl Executable for DefineVariable {
+    fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
+        let expr_res = self.value.execute_core(ctx)?;
+
+        // skip type check if var_type is Void (inferred from expression, e.g. := syntax)
+        if self.var_type.get_kind() != crate::types::TypeKind::Void && !self.type_matches(&expr_res)
+        {
+            return Err(format!(
+                "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                self.name, self.var_type, expr_res
+            ));
+        }
+
+        let result = expr_res.clone(); // because of let x := (y := 3) + 2;
+        ctx.add_variable(&self.name, expr_res)?;
+
+        Ok(result)
+    }
+}
+
+#[derive(Clone)]
+pub struct DefineVariableStatic {
+    pub var_type: Type,
+    pub name: String,
+    pub value: Rc<ExprNode>,
+}
+
+impl DefineVariableStatic {
+    pub fn new(vtype: Type, n: &str, val: Rc<ExprNode>) -> Self {
+        DefineVariableStatic {
+            var_type: vtype,
+            name: String::from(n),
+            value: val,
+        }
+    }
+
+    fn type_matches(&self, value: &Type) -> bool {
+        self.var_type.get_kind() == value.get_kind()
+    }
+}
+
+impl Executable for DefineVariableStatic {
+    fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
+        // Static variables are only initialized once; skip if already defined
+        if ctx.has_static_variable(&self.name) {
+            return Ok(ctx.get_variable_reference(&self.name));
+        }
+
+        let expr_res = self.value.execute_core(ctx)?;
+
+        // skip type check if var_type is Void (inferred from expression, e.g. := syntax)
+        if self.var_type.get_kind() != crate::types::TypeKind::Void && !self.type_matches(&expr_res)
+        {
+            return Err(format!(
+                "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                self.name, self.var_type, expr_res
+            ));
+        }
+
+        let result = expr_res.clone();
+        ctx.add_static_variable(&self.name, expr_res)?;
+
+        Ok(result)
+    }
+}
+
+#[derive(Clone)]
+pub struct SetVariable {
+    pub var_type: Type,
+    pub name: String,
+    pub value: Rc<ExprNode>,
+}
+
+impl SetVariable {
+    pub fn new(vtype: Type, n: &str, val: Rc<ExprNode>) -> Self {
+        SetVariable {
+            var_type: vtype,
+            name: String::from(n),
+            value: val,
+        }
+    }
+
+    fn type_matches(&self, value: &Type) -> bool {
+        self.var_type.get_kind() == value.get_kind()
+    }
+}
+
+impl Executable for SetVariable {
+    fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
+        let mut expr_res = self.value.execute_core(ctx)?;
+
+        // skip compile-time type check if var_type is Void (runtime type check in Context::set_variable)
+        // the parser only indentifies the pattern and does not know at this point what type given identifier is so it gives it type void
+        if self.var_type.get_kind() != crate::types::TypeKind::Void && !self.type_matches(&expr_res)
+        {
+            if let Ok(downcasted) = expr_res.clone().cast_down() {
+                if self.type_matches(&downcasted) {
+                    expr_res = downcasted;
+                } else if let Ok(upcasted) = expr_res.clone().cast_up() {
+                    if self.type_matches(&upcasted) {
+                        expr_res = upcasted;
+                    } else {
+                        return Err(format!(
+                            "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                            self.name, self.var_type, expr_res
+                        ));
+                    }
+                } else {
+                    return Err(format!(
+                        "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                        self.name, self.var_type, expr_res
+                    ));
+                }
+            } else if let Ok(upcasted) = expr_res.clone().cast_up() {
+                if self.type_matches(&upcasted) {
+                    expr_res = upcasted;
+                } else {
+                    return Err(format!(
+                        "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                        self.name, self.var_type, expr_res
+                    ));
+                }
+            } else {
+                return Err(format!(
+                    "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                    self.name, self.var_type, expr_res
+                ));
+            }
+        }
+
+        let result = expr_res.clone(); // because of let x := (y := 3) + 2;
+        ctx.set_variable(&self.name, expr_res)?;
+
+        Ok(result)
+    }
+}
+
+#[derive(Clone)]
+pub struct SetVariableStatic {
+    pub var_type: Type,
+    pub name: String,
+    pub value: Rc<ExprNode>,
+}
+
+impl SetVariableStatic {
+    pub fn new(vtype: Type, n: &str, val: Rc<ExprNode>) -> Self {
+        SetVariableStatic {
+            var_type: vtype,
+            name: String::from(n),
+            value: val,
+        }
+    }
+
+    fn type_matches(&self, value: &Type) -> bool {
+        self.var_type.get_kind() == value.get_kind()
+    }
+}
+
+impl Executable for SetVariableStatic {
+    fn execute(&self, ctx: &mut Context) -> Result<Type, String> {
+        let mut expr_res = self.value.execute_core(ctx)?;
+
+        // skip compile-time type check if var_type is Void (runtime type check in Context::set_variable)
+        // the parser only indentifies the pattern and does not know at this point what type given identifier is so it gives it type void
+        if self.var_type.get_kind() != crate::types::TypeKind::Void && !self.type_matches(&expr_res)
+        {
+            if let Ok(downcasted) = expr_res.clone().cast_down() {
+                if self.type_matches(&downcasted) {
+                    expr_res = downcasted;
+                } else if let Ok(upcasted) = expr_res.clone().cast_up() {
+                    if self.type_matches(&upcasted) {
+                        expr_res = upcasted;
+                    } else {
+                        return Err(format!(
+                            "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                            self.name, self.var_type, expr_res
+                        ));
+                    }
+                } else {
+                    return Err(format!(
+                        "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                        self.name, self.var_type, expr_res
+                    ));
+                }
+            } else if let Ok(upcasted) = expr_res.clone().cast_up() {
+                if self.type_matches(&upcasted) {
+                    expr_res = upcasted;
+                } else {
+                    return Err(format!(
+                        "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                        self.name, self.var_type, expr_res
+                    ));
+                }
+            } else {
+                return Err(format!(
+                    "[AST] mismatched types: variable {:?} has type {:?} but has type {:?} assigned to it",
+                    self.name, self.var_type, expr_res
+                ));
+            }
+        }
+
+        let result = expr_res.clone(); // because of let x := (y := 3) + 2;
+        ctx.set_variable_static(&self.name, expr_res)?;
+
+        Ok(result)
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Tests
+// -----------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
