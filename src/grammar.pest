@@ -31,7 +31,7 @@ identifier = @{ !keyword ~ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 static_identifier = { "static" ~ identifier }
 
 keyword = {
-    ("fn" | "let" | "struct" | "if" | "else" | "while" | "for" | "return" | "break" | "continue" | "true" | "false" | "null" | "put" | "putln" | "len" | "typeof" | "push" | "pop" | "note" | "import" | "maybe" | "i32" | "i64" | "int" | "f32" | "f64" | "bool" | "str" | "void") ~ !(ASCII_ALPHANUMERIC | "_")
+    ("fn" | "let" | "struct" | "if" | "else" | "while" | "for" | "return" | "break" | "continue" | "true" | "false" | "null" | "note" | "import" | "i32" | "i64" | "int" | "f32" | "f64" | "bool" | "str" | "void") ~ !(ASCII_ALPHANUMERIC | "_")
 }
 
 // ============================================================================
@@ -69,12 +69,12 @@ primary = {
   | identifier ~ call_args?
 }
 
-maybe_expr = { "maybe" }
+maybe_expr = { "#maybe" }
 
-len_expr    = { "len" ~ primary }
-typeof_expr = { "typeof" ~ primary }
-push_expr   = { "push" ~ primary ~ primary }
-pop_expr    = { "pop" ~ primary }
+len_expr    = { "#len" ~ primary }
+typeof_expr = { "#typeof" ~ primary }
+push_expr   = { "#push" ~ primary ~ primary }
+pop_expr    = { "#pop" ~ primary }
 
 // ============================================================================
 // Postfix operations (field access, indexing)
@@ -218,8 +218,8 @@ init_stmt_no_semi   = { identifier ~ ":=" ~ expr }
 assign_stmt_no_semi = { identifier ~ "=" ~ expr }
 break_stmt          = { "break" ~ ";" }
 continue_stmt       = { "continue" ~ ";" }
-print_stmt          = { "put" ~ expr ~ ";" }
-println_stmt        = { "putln" ~ expr ~ ";" }
+print_stmt          = { "#put" ~ expr ~ ";" }
+println_stmt        = { "#putln" ~ expr ~ ";" }
 expr_stmt           = { expr ~ ";" }
 
 // ============================================================================

@@ -69,6 +69,7 @@ impl Emit for TypeKind {
             TypeKind::Ref => "ref".to_string(),
             TypeKind::Break => "break".to_string(),
             TypeKind::Continue => "continue".to_string(),
+            TypeKind::HashMap => "hashmap".to_string(),
         }
     }
 }

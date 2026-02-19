@@ -20,6 +20,7 @@ pub enum TypeKind {
     Break,
     Continue,
     Optional,
+    HashMap,
 }
 
 pub trait Castable {
@@ -125,6 +126,10 @@ pub enum Type {
     Break,
     Continue,
     Optional(Box<Type>), // Some(val) or None represented as Optional(Box::new(Null)),
+                         // HashMap {
+                         //     signature: (TypeKind, TypeKind),
+                         //     map: HashMap<Type, Type>,
+                         // },
 }
 
 impl Castable for Type {
