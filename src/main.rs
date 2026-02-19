@@ -9,7 +9,6 @@ use std::thread;
 
 use rustc_hash::FxHashMap;
 
-use pavo::Type;
 use pavo::ast::{Context, Executable};
 use pavo::functions::Function;
 use pavo::parser::parse;
