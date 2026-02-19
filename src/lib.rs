@@ -1,7 +1,9 @@
 #[macro_use]
 extern crate lazy_static;
 
+pub mod analysis;
 pub mod ast;
+pub mod codegen;
 pub mod emit;
 pub mod functions;
 pub mod parser;
