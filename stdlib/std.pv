@@ -1,56 +1,14 @@
 // === println overloads ===
 
+template T : i32 | i64 | f32 | f64 | str | bool {
+    fn println(x: T) -> void {
+        #putln x;
+    }
 
-fn println(x: i32) -> void {
-    #putln x;
+    fn print(x: T) -> void {
+        #put x;
+    }
 }
-
-fn println(x: i64) -> void {
-    #putln x;
-}
-
-fn println(x: f32) -> void {
-    #putln x;
-}
-
-fn println(x: f64) -> void {
-    #putln x;
-}
-
-fn println(x: str) -> void {
-    #putln x;
-}
-
-fn println(x: bool) -> void {
-    #putln x;
-}
-
-// === print overloads ===
-
-fn print(x: i32) -> void {
-    #put x;
-}
-
-fn print(x: i64) -> void {
-    #put x;
-}
-
-fn print(x: f32) -> void {
-    #put x;
-}
-
-fn print(x: f64) -> void {
-    #put x;
-}
-
-fn print(x: str) -> void {
-    #put x;
-}
-
-fn print(x: bool) -> void {
-    #put x;
-}
-
 
 // === to_str overloads ===
 

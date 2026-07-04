@@ -1,0 +1,569 @@
+direction: right
+
+title: Pavo Compiler Architecture {
+  near: top-center
+  shape: text
+  style.font-size: 28
+  style.bold: true
+}
+
+# ──────────────────────────────────────────────
+# Compilation Pipeline
+# ──────────────────────────────────────────────
+
+pipeline: {
+  label: "Compilation Pipeline"
+  style.fill: "#f8f9fa"
+  style.stroke: "#dee2e6"
+
+  source: "Source (.pv)" { shape: page }
+  stdlib: "Stdlib (std.pv)\n(embedded)" { shape: page }
+  imports: "Import Resolver\n(recursive)" { shape: hexagon }
+  templates: Templates { shape: hexagon }
+  parser: "Parser\n(pest PEG)" { shape: hexagon }
+  ast: AST { shape: hexagon }
+  analysis: "Static Analysis" { shape: hexagon }
+  interpreter: "Tree-Walking\nInterpreter" { shape: hexagon }
+  codegen: "LLVM Codegen\n(inkwell)" { shape: hexagon }
+  output_interp: "Runtime Output" { shape: page }
+  output_llvm: "LLVM IR → Binary" { shape: page }
+
+  source -> imports: resolve
+  stdlib -> imports: embed
+  imports -> templates: merged source
+  templates -> parser: expanded source
+  parser -> ast: build
+  ast -> analysis: check
+  ast -> interpreter: execute
+  ast -> codegen: compile
+  interpreter -> output_interp
+  codegen -> output_llvm
+}
+
+# ──────────────────────────────────────────────
+# Module Structure
+# ──────────────────────────────────────────────
+
+modules: {
+  label: "Modules (src/)"
+  style.fill: "#f0f4ff"
+  style.stroke: "#b0c4de"
+
+  lib: lib.rs {
+    shape: class
+    "pub mod { analysis, ast, codegen, emit, functions, parser, templates, types }"
+    "re-exports core types"
+  }
+
+  main: main.rs {
+    shape: class
+    "STDLIB_STD (embedded)"
+    "get_embedded_stdlib()"
+    "load_program()"
+    "load_embedded()"
+    "run_interpreter()"
+  }
+
+  parser: parser.rs {
+    shape: class
+    "PavoParser (pest)"
+    "PrattParser (precedence)"
+    "ParsedProgram { functions, structs, imports }"
+    "parse() -> ParsedProgram"
+  }
+
+  ast: ast.rs {
+    shape: class
+    "Context"
+    "ASTNode (enum)"
+    "ExprNode (enum)"
+    "Symbol (enum)"
+    "DefineVariable / DefineVariableStatic"
+    "SetVariable / SetVariableStatic"
+    "Executable (trait)"
+  }
+
+  types: types.rs {
+    shape: class
+    "Type (enum)"
+    "TypeKind (enum)"
+    "StructDef"
+    "Castable (trait)"
+  }
+
+  functions: functions.rs {
+    shape: class
+    "Function"
+    "FunctionParam"
+    "Executable (impl)"
+  }
+
+  codegen: codegen.rs {
+    shape: class
+    "CodegenContext"
+    "Compilable (trait)"
+    "compile_binop()"
+  }
+
+  emit: emit.rs {
+    shape: class
+    "Emit (trait)"
+    "S-expression output"
+    "EmitType (trait, private)"
+  }
+
+  templates: templates.rs {
+    shape: class
+    "expand_templates()"
+    "expand_templates_only()"
+    "template T : types { body }"
+    "template (T, V) : (t1, t2) | ... { body }"
+  }
+
+  analysis: analysis.rs {
+    shape: class
+    "StaticContext"
+    "resolve_overload()"
+    "TypeCheck (trait)"
+    "ConstFold (trait)"
+  }
+
+  main -> parser: parse source
+  main -> ast: execute AST
+  main -> templates: expand templates
+  lib -> ast: re-exports
+  lib -> types: re-exports
+  lib -> functions: re-exports
+  parser -> ast: builds
+  parser -> types: uses TypeKind
+  parser -> functions: builds Function
+  ast -> types: uses Type
+  ast -> functions: calls Function
+  codegen -> ast: reads ExprNode
+  codegen -> types: compiles Type
+  emit -> ast: serializes
+  emit -> types: serializes
+  emit -> functions: serializes
+  analysis -> types: static TypeKind
+  analysis -> functions: checks signatures
+}
+
+# ──────────────────────────────────────────────
+# Type System
+# ──────────────────────────────────────────────
+
+type_system: {
+  label: "Type System"
+  style.fill: "#fff8f0"
+  style.stroke: "#e8c9a0"
+
+  TypeKind: TypeKind {
+    shape: class
+    Int32
+    Int64
+    Float32
+    Float64
+    Str
+    Bool
+    Void
+    Array
+    Object
+    Optional
+    Ref
+    VarRef
+    Null
+    Break
+    Continue
+    HashMap
+  }
+
+  Type: Type {
+    shape: class
+    "Int32(i32)"
+    "Int64(i64)"
+    "Float32(f32)"
+    "Float64(f64)"
+    "Str(String)"
+    "Bool(bool)"
+    "Void"
+    "Array(Vec<Type>)"
+    "Object { type_name, fields: BTreeMap }"
+    "Optional(Box<Type>)"
+    "Ref(Box<Type>)"
+    "VarRef(String)"
+    "Null / Break / Continue"
+    "---"
+    "get_kind() -> TypeKind"
+    "increment() / decrement()"
+    "push() / copy()"
+    "get_field() / set_field()"
+    "set_index()"
+    "get_type_name()"
+  }
+
+  StructDef: StructDef {
+    shape: class
+    "name: String"
+    "fields: Vec<(String, TypeKind)>"
+    "---"
+    "new() / with_field() / add_field()"
+    "validate()"
+    "instantiate() -> Type::Object"
+  }
+
+  Castable: "Castable (trait)" {
+    shape: class
+    "lowkey_cast() -> bool"
+    "cast_up() -> Type"
+    "cast_down() -> Type"
+  }
+
+  ops: "Operator Traits (std::ops)" {
+    shape: class
+    "Add"
+    "Sub"
+    "Mul"
+    "Div"
+    "AddAssign"
+  }
+
+  Type -> TypeKind: "get_kind()"
+  StructDef -> TypeKind: "field types"
+  StructDef -> Type: "instantiate()"
+  Type -> Castable: implements
+  Type -> ops: implements
+}
+
+# ──────────────────────────────────────────────
+# AST Nodes
+# ──────────────────────────────────────────────
+
+ast_nodes: {
+  label: "AST"
+  style.fill: "#f0fff0"
+  style.stroke: "#a0d8a0"
+
+  ASTNode: ASTNode {
+    shape: class
+    "Expr(ExprNode)"
+    "DefineVar(DefineVariable)"
+    "DefineVarStatic(DefineVariableStatic)"
+    "SetVar(SetVariable)"
+    "SetVarStatic(SetVariableStatic)"
+    "SetField { object_name, field_name, value }"
+    "SetIndex { array_name, index, value }"
+    "Print(ExprNode)"
+    "Println(ExprNode)"
+    "Note { note, subtree }"
+    "Return(ExprNode)"
+  }
+
+  ExprNode: ExprNode {
+    shape: class
+    "BinaryOp { op, left, right }"
+    "Literal(Type)"
+    "ArrayLiteral(Vec<Rc<ExprNode>>)"
+    "Index { array, index }"
+    "IfElseNode { statement, then_branch, else_branch }"
+    "LoopNode { statement, body }"
+    "FunctionCall { name, args }"
+    "StructLiteral { struct_name, fields }"
+    "Field { object, field_name }"
+    "ArraySized { length, fill }"
+    "Len(Rc<ExprNode>)"
+    "TypeOf(Rc<ExprNode>)"
+    "Push { array, value }"
+    "Pop(Rc<ExprNode>)"
+    "Maybe"
+  }
+
+  Symbol: Symbol {
+    shape: class
+    "Arithmetic: + - * / // % **"
+    "Bitwise: & | ^ ~"
+    "Logical: && || !"
+    "Comparison: == != < > <= >="
+    "Assignment: = :="
+    "Access: . ->"
+    "Postfix: ++ --"
+    "Meta: index call ,"
+  }
+
+  DefineVariable: DefineVariable {
+    shape: class
+    "var_type: Type"
+    "name: String"
+    "value: Rc<ExprNode>"
+  }
+
+  DefineVariableStatic: DefineVariableStatic {
+    shape: class
+    "var_type: Type"
+    "name: String"
+    "value: Rc<ExprNode>"
+  }
+
+  SetVariable: SetVariable {
+    shape: class
+    "var_type: Type"
+    "name: String"
+    "value: Rc<ExprNode>"
+  }
+
+  SetVariableStatic: SetVariableStatic {
+    shape: class
+    "var_type: Type"
+    "name: String"
+    "value: Rc<ExprNode>"
+  }
+
+  Context: Context {
+    shape: class
+    "vars: FxHashMap<String, Type>"
+    "functions: Rc<FxHashMap<String, Vec<Function>>>"
+    "structs: Rc<FxHashMap<String, StructDef>>"
+    "static_vars: Rc<RefCell<FxHashMap<String, Type>>>"
+    "return_value: Option<Type>"
+    "---"
+    "new() / empty()"
+    "resolve_function()"
+    "add_variable() / set_variable()"
+    "add_static_variable() / set_variable_static()"
+    "has_static_variable()"
+    "get_variable_reference()"
+    "set_return() / has_returned() / take_return()"
+  }
+
+  Executable: "Executable (trait)" {
+    shape: class
+    "execute(&self, ctx: &mut Context) -> Result<Type, String>"
+  }
+
+  ASTNode -> ExprNode: contains
+  ASTNode -> DefineVariable: wraps
+  ASTNode -> SetVariable: wraps
+  ExprNode -> Symbol: uses
+  ExprNode -> ASTNode: "branches contain"
+  ASTNode -> Executable: implements
+  ASTNode -- Context: "executes with"
+}
+
+# ──────────────────────────────────────────────
+# Functions
+# ──────────────────────────────────────────────
+
+funcs: {
+  label: "Functions"
+  style.fill: "#fff0ff"
+  style.stroke: "#d8a0d8"
+
+  Function: Function {
+    shape: class
+    "name: String"
+    "return_type: Type"
+    "args: Vec<FunctionParam>"
+    "body: Vec<ASTNode>"
+    "---"
+    "new()"
+    "execute_with_args()"
+    "execute() (Executable)"
+  }
+
+  FunctionParam: FunctionParam {
+    shape: class
+    "name: String"
+    "param_type: TypeKind"
+    "array_element_type: Option<TypeKind>"
+  }
+
+  Function -> FunctionParam: has params
+}
+
+# ──────────────────────────────────────────────
+# LLVM Codegen
+# ──────────────────────────────────────────────
+
+llvm: {
+  label: "LLVM Codegen"
+  style.fill: "#f5f0ff"
+  style.stroke: "#c0b0e0"
+
+  CodegenContext: "CodegenContext<'ctx>" {
+    shape: class
+    "context: &Context (inkwell)"
+    "module: Module"
+    "builder: Builder"
+    "vars: FxHashMap<String, PointerValue>"
+    "functions: FxHashMap<String, FunctionValue>"
+    "---"
+    "new()"
+  }
+
+  Compilable: "Compilable<'ctx> (trait)" {
+    shape: class
+    "compile(&self, ctx) -> Result<BasicValueEnum, String>"
+  }
+
+  compile_binop: "compile_binop()" {
+    shape: class
+    "int arithmetic: add, sub, mul, div, rem"
+    "int comparison: eq, ne, lt, gt, le, ge"
+    "float arithmetic: fadd, fsub, fmul, fdiv, frem"
+    "float comparison: feq, fne, flt, fgt, fle, fge"
+  }
+
+  CodegenContext -> Compilable: drives
+  Compilable -> compile_binop: delegates
+}
+
+# ──────────────────────────────────────────────
+# Static Analysis
+# ──────────────────────────────────────────────
+
+analysis: {
+  label: "Static Analysis"
+  style.fill: "#f0f8ff"
+  style.stroke: "#a0c8e8"
+
+  StaticContext: StaticContext {
+    shape: class
+    "vars: FxHashMap<String, TypeKind>"
+    "functions: FxHashMap<String, Vec<Function>>"
+    "structs: FxHashMap<String, StructDef>"
+    "---"
+    "new()"
+    "resolve_overload()"
+    "kind_matches()"
+  }
+
+  TypeCheck: "TypeCheck (trait)" {
+    shape: class
+    "type_check(&self, env) -> Result<TypeKind, String>"
+  }
+
+  ConstFold: "ConstFold (trait)" {
+    shape: class
+    "const_fold(&self) -> Result<Option<Type>, String>"
+  }
+
+  StaticContext -> TypeCheck: uses
+  StaticContext -> ConstFold: uses
+}
+
+# ──────────────────────────────────────────────
+# Emit / Serialization
+# ──────────────────────────────────────────────
+
+emit: {
+  label: "Emit (S-expression output)"
+  style.fill: "#fffff0"
+  style.stroke: "#d8d8a0"
+
+  Emit: "Emit (trait)" {
+    shape: class
+    "emit(&self) -> String"
+  }
+
+  impls: "Implementations" {
+    shape: class
+    "Type -> literals, arrays, objects"
+    "TypeKind -> type names"
+    "Symbol -> operator strings"
+    "ExprNode -> S-expr tree"
+    "ASTNode -> S-expr tree"
+    "Function -> (fn name (params) (returns) (body))"
+    "FunctionParam -> (name type)"
+    "StructDef -> (struct name (fields))"
+    "DefineVariable -> (let name type value)"
+    "SetVariable -> (assign name value)"
+  }
+
+  Emit -> impls: implemented by
+}
+
+# ──────────────────────────────────────────────
+# Templates
+# ──────────────────────────────────────────────
+
+templates: {
+  label: "Template Expansion (preprocessor)"
+  style.fill: "#f8fff0"
+  style.stroke: "#b0d8a0"
+
+  api: "Public API" {
+    shape: class
+    "expand_templates(source) -> Result<String>"
+    "expand_templates_only(source) -> Result<String>"
+  }
+
+  internals: "Internals" {
+    shape: class
+    "find_template_keyword()"
+    "expand_one() -> (expanded, consumed)"
+    "parse_params() -> Vec<String>"
+    "parse_type_combos()"
+    "parse_brace_block()"
+    "replace_whole_word()"
+    "is_word_boundary()"
+  }
+
+  api -> internals: uses
+}
+
+# ──────────────────────────────────────────────
+# Parser Internals
+# ──────────────────────────────────────────────
+
+parser_detail: {
+  label: "Parser Detail"
+  style.fill: "#fff0f8"
+  style.stroke: "#d8a0c0"
+
+  ParsedProgram: ParsedProgram {
+    shape: class
+    "functions: Vec<Function>"
+    "structs: Vec<StructDef>"
+    "imports: Vec<String>"
+  }
+
+  parse_fns: "Parse Functions" {
+    shape: class
+    "parse() -> ParsedProgram"
+    "parse_fn_def() -> Function"
+    "parse_struct_def() -> StructDef"
+    "parse_block() -> Vec<ASTNode>"
+    "parse_statement() -> ASTNode"
+    "parse_expr() -> ExprNode"
+    "parse_expr_pratt() (Pratt parser)"
+    "parse_primary() -> ExprNode"
+    "parse_if_expr() -> ExprNode"
+    "parse_for_stmt() (desugars to while)"
+    "parse_struct_literal()"
+    "parse_type_kind() -> TypeKind"
+  }
+
+  ParsedProgram -> parse_fns: produced by
+}
+
+# ──────────────────────────────────────────────
+# Cross-section relationships
+# ──────────────────────────────────────────────
+
+funcs.Function -> ast_nodes.ASTNode: "body contains"
+funcs.Function -> type_system.Type: "return_type"
+funcs.Function -> ast_nodes.Executable: implements
+funcs.FunctionParam -> type_system.TypeKind: "param_type"
+ast_nodes.ExprNode -> type_system.Type: "Literal holds"
+ast_nodes.Context -> funcs.Function: "resolves & calls"
+ast_nodes.Context -> type_system.StructDef: "holds definitions"
+ast_nodes.Context -> type_system.Type: "stores values"
+llvm.Compilable -> ast_nodes.ExprNode: "impl for ExprNode"
+llvm.Compilable -> type_system.Type: "impl for Type"
+analysis.StaticContext -> type_system.TypeKind: "tracks var types"
+analysis.StaticContext -> funcs.Function: "checks signatures"
+parser_detail.ParsedProgram -> funcs.Function: "contains"
+parser_detail.ParsedProgram -> type_system.StructDef: "contains"
+emit.Emit -> ast_nodes.ASTNode: "impl for"
+emit.Emit -> type_system.Type: "impl for"
+emit.Emit -> funcs.Function: "impl for"
+templates.api -> parser_detail.parse_fns: "runs before"

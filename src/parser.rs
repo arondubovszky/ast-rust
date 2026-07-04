@@ -280,6 +280,7 @@ fn parse_statement(pair: Pair<Rule>) -> ASTNode {
         }
         Rule::while_stmt => parse_while_stmt(inner),
         Rule::for_stmt => parse_for_stmt(inner),
+        Rule::four_stmt => parse_four_stmt(inner),
         Rule::break_stmt => ASTNode::Expr(ExprNode::Literal(Type::Break)),
         Rule::continue_stmt => ASTNode::Expr(ExprNode::Literal(Type::Continue)),
         Rule::print_stmt => {
@@ -429,6 +430,52 @@ fn parse_for_stmt(pair: Pair<Rule>) -> ASTNode {
     });
 
     // return as if(true) { init; while(...) { ... } } — a sequencing hack
+    ASTNode::Expr(ExprNode::IfElseNode {
+        statement: Rc::new(ExprNode::Literal(Type::Bool(true))),
+        then_branch: Rc::new(vec![init, loop_node]),
+        else_branch: None,
+    })
+}
+
+/// Desugars `four { body }` into `let __four_i: i32 = 0; while (__four_i < 4) { body...; __four_i = __four_i + 1; }`
+fn parse_four_stmt(pair: Pair<Rule>) -> ASTNode {
+    let mut inner = pair.into_inner();
+    let block_pair = inner.next().unwrap();
+    let mut body = parse_block(block_pair);
+
+    let var_name = "__four_i".to_string();
+
+    // __four_i = __four_i + 1
+    let update = ASTNode::SetVar(SetVariable::new(
+        Type::Void,
+        &var_name,
+        Rc::new(ExprNode::BinaryOp {
+            op: Symbol::Plus,
+            left: Rc::new(ExprNode::Literal(Type::VarRef(var_name.clone()))),
+            right: Some(Rc::new(ExprNode::Literal(Type::Int32(1)))),
+        }),
+    ));
+    body.push(update);
+
+    // __four_i < 4
+    let condition = ExprNode::BinaryOp {
+        op: Symbol::Lt,
+        left: Rc::new(ExprNode::Literal(Type::VarRef(var_name.clone()))),
+        right: Some(Rc::new(ExprNode::Literal(Type::Int32(4)))),
+    };
+
+    // let __four_i: i32 = 0
+    let init = ASTNode::DefineVar(DefineVariable::new(
+        Type::Int32(0),
+        &var_name,
+        Rc::new(ExprNode::Literal(Type::Int32(0))),
+    ));
+
+    let loop_node = ASTNode::Expr(ExprNode::LoopNode {
+        statement: Rc::new(condition),
+        body: Rc::new(body),
+    });
+
     ASTNode::Expr(ExprNode::IfElseNode {
         statement: Rc::new(ExprNode::Literal(Type::Bool(true))),
         then_branch: Rc::new(vec![init, loop_node]),
